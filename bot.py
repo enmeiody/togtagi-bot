@@ -8,7 +8,7 @@ from telegram.ext import (
 )
 
 # ==================== SOZLAMALAR ====================
-BOT_TOKEN = "YOUR_TOKEN_HERE"  # Bu yerga yangi tokeningizni kiriting
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Bu yerga yangi tokeningizni kiriting
 ADMIN_ID = 8886176055  # Sizning Telegram ID ingiz
 ADMIN_CHAT_ID = 8886176055  # Bron xabarlari keladigan chat (guruh ID si bo'lsa shu yerga)
 
