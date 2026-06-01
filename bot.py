@@ -8,22 +8,22 @@ from telegram.ext import (
 )
 
 # ==================== SOZLAMALAR ====================
-BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Bu yerga yangi tokeningizni kiriting
+BOT_TOKEN = "YOUR_TOKEN_HERE"  # Bu yerga yangi tokeningizni kiriting
 ADMIN_ID = 8886176055  # Sizning Telegram ID ingiz
 ADMIN_CHAT_ID = 8886176055  # Bron xabarlari keladigan chat (guruh ID si bo'lsa shu yerga)
 
 # ==================== XONALAR BAZASI ====================
 XONALAR = {
-    1: {"nomi": "1-xona", "qavat": 1, "sig'im": 3, "tur": "oila", "band_kunlar": []},
-    2: {"nomi": "2-xona", "qavat": 1, "sig'im": 3, "tur": "oila", "band_kunlar": []},
-    3: {"nomi": "3-xona", "qavat": 1, "sig'im": 7, "tur": "oila", "band_kunlar": []},
-    4: {"nomi": "4-xona", "qavat": 1, "sig'im": 7, "tur": "oila", "band_kunlar": []},
-    5: {"nomi": "5-xona", "qavat": 2, "sig'im": 3, "tur": "do'stlar", "band_kunlar": []},
-    6: {"nomi": "6-xona", "qavat": 2, "sig'im": 3, "tur": "do'stlar", "band_kunlar": []},
-    7: {"nomi": "7-xona", "qavat": 2, "sig'im": 3, "tur": "do'stlar", "band_kunlar": []},
-    8: {"nomi": "8-xona", "qavat": 2, "sig'im": 3, "tur": "do'stlar", "band_kunlar": []},
-    9: {"nomi": "9-xona", "qavat": 2, "sig'im": 3, "tur": "do'stlar", "band_kunlar": []},
-    10: {"nomi": "10-xona", "qavat": 2, "sig'im": 3, "tur": "do'stlar", "band_kunlar": []},
+    1: {"nomi": "1-xona", "qavat": 1, "sigim": 3, "tur": "oila", "band_kunlar": []},
+    2: {"nomi": "2-xona", "qavat": 1, "sigim": 3, "tur": "oila", "band_kunlar": []},
+    3: {"nomi": "3-xona", "qavat": 1, "sigim": 7, "tur": "oila", "band_kunlar": []},
+    4: {"nomi": "4-xona", "qavat": 1, "sigim": 7, "tur": "oila", "band_kunlar": []},
+    5: {"nomi": "5-xona", "qavat": 2, "sigim": 3, "tur": "do'stlar", "band_kunlar": []},
+    6: {"nomi": "6-xona", "qavat": 2, "sigim": 3, "tur": "do'stlar", "band_kunlar": []},
+    7: {"nomi": "7-xona", "qavat": 2, "sigim": 3, "tur": "do'stlar", "band_kunlar": []},
+    8: {"nomi": "8-xona", "qavat": 2, "sigim": 3, "tur": "do'stlar", "band_kunlar": []},
+    9: {"nomi": "9-xona", "qavat": 2, "sigim": 3, "tur": "do'stlar", "band_kunlar": []},
+    10: {"nomi": "10-xona", "qavat": 2, "sigim": 3, "tur": "do'stlar", "band_kunlar": []},
 }
 
 # ==================== LOGGING ====================
@@ -55,7 +55,7 @@ def mos_xonalar(kishi_soni: int, guruh_turi: str, sana: str) -> list:
             continue
         
         # Sig'im yetarlimi
-        if xona["sig'im"] < kishi_soni:
+        if xona["sigim"] < kishi_soni:
             continue
         
         # Guruh turi bo'yicha filtrlash
@@ -81,7 +81,7 @@ def xonalar_haqida_matn(mos_xonalar_list: list) -> str:
     for xona_id, xona, _ in mos_xonalar_list[:5]:  # Max 5 ta ko'rsat
         qavat_izoh = "🏠 1-qavat (oilalar uchun qulay)" if xona["qavat"] == 1 else "🏢 2-qavat (do'stlar uchun qulay)"
         matn += f"🛏 *{xona['nomi']}*\n"
-        matn += f"   👥 Sig'imi: {xona[\"sig'im\"]} kishi\n"
+        matn += f"   👥 Sigimi: {xona['sigim']} kishi\n"
         matn += f"   {qavat_izoh}\n\n"
     
     return matn
@@ -325,14 +325,16 @@ async def bosh_xonalar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for xona_id in [1, 2, 3, 4]:
         xona = XONALAR[xona_id]
         holat = "🔴 Band" if xona_band_mi(xona_id, bugun) else "🟢 Bo'sh"
-        matn += f"  • {xona['nomi']} — {xona[\"sig'im\"]} kishi — {holat}\n"
+        sigim = xona['sigim']
+        matn += f"  • {xona['nomi']} — {sigim} kishi — {holat}\n"
     
     matn += "\n🏢 *2-qavat (Do'stlar uchun qulay):*\n"
     
     for xona_id in [5, 6, 7, 8, 9, 10]:
         xona = XONALAR[xona_id]
         holat = "🔴 Band" if xona_band_mi(xona_id, bugun) else "🟢 Bo'sh"
-        matn += f"  • {xona['nomi']} — {xona[\"sig'im\"]} kishi — {holat}\n"
+        sigim = xona['sigim']
+        matn += f"  • {xona['nomi']} — {sigim} kishi — {holat}\n"
     
     matn += "\n_Bron qilish uchun 🏨 Xona bron qilish tugmasini bosing_"
     
@@ -424,11 +426,12 @@ async def admin_holat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     for xona_id, xona in XONALAR.items():
         band = xona["band_kunlar"]
+        sigim = xona['sigim']
         if band:
-            band_matn = ", ".join(band[-3:])  # Oxirgi 3 ta
-            matn += f"🔴 {xona['nomi']} ({xona[\"sig'im\"]} kishi) — Band: {band_matn}\n"
+            band_matn = ", ".join(band[-3:])
+            matn += f"🔴 {xona['nomi']} ({sigim} kishi) — Band: {band_matn}\n"
         else:
-            matn += f"🟢 {xona['nomi']} ({xona[\"sig'im\"]} kishi) — Bo'sh\n"
+            matn += f"🟢 {xona['nomi']} ({sigim} kishi) — Bosh\n"
     
     matn += "\n*Buyruqlar:*\n"
     matn += "/band [xona] [sana] — Band qilish\n"
