@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from telebot import types
-from database import (db, get_xonalar, format_narx, is_admin, is_director,
+from db_module import (db, get_xonalar, format_narx, is_admin, is_director,
                       band_qil, bosh_qil_sana, bekor_qil_bron, get_bron, qidir_mijoz)
 from texts import TELEFON1
 from utils import bron_id_gen, tugash_sanasi, sana_tugmalari, kunlar_tugmalari
