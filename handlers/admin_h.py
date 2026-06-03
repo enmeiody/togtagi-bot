@@ -526,48 +526,25 @@ def register(bot):
         bid = call.data.replace("BRON_OZGARTIR_", "")
         b = get_bron(bid)
         if not b: return
+        # Eski bronni bekor qilamiz va tezkor bron jarayonini boshlaymiz
+        bekor_qil_bron(bid)
         from handlers.astate import astate
-        astate[call.from_user.id] = {"step": "bron_ozgartir", "bron_id": bid}
-        tugash = tugash_sanasi(b["sana"], b["kunlar"])
-        kb = types.InlineKeyboardMarkup(row_width=1)
-        kb.add(
-            types.InlineKeyboardButton("👥 Kishi sonini o'zgartir", callback_data=f"OZG_KISHI_{bid}"),
-            types.InlineKeyboardButton("📅 Sanani o'zgartir", callback_data=f"OZG_SANA_{bid}"),
-            types.InlineKeyboardButton("🌙 Kunlarni o'zgartir", callback_data=f"OZG_KUN_{bid}"),
-        )
-        bot.send_message(call.message.chat.id,
-            f"Bron #{bid} o'zgartirish:\n\n{b['ism']} | {b['xona']}\n{b['sana']}-{tugash} | {b['kishi']} kishi\n\nNimani o'zgartirmoqchisiz?",
-            reply_markup=kb)
-        bot.answer_callback_query(call.id)
-
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("OZG_KISHI_"))
-    def cb_ozg_kishi(call):
-        if not is_admin(call.from_user.id): return
-        bid = call.data.replace("OZG_KISHI_", "")
-        from handlers.astate import astate
-        astate[call.from_user.id] = {"step": "ozg_kishi", "bron_id": bid}
+        astate[call.from_user.id] = {
+            "step": "tb_kishi",
+            "ab": {
+                "ism": b["ism"],
+                "telefon": b["telefon"],
+            }
+        }
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
         for i in range(1, 11): kb.add(str(i))
         kb.add("🔙 Admin menyu")
-        bot.send_message(call.message.chat.id, "Yangi kishi sonini kiriting:", reply_markup=kb)
-        bot.answer_callback_query(call.id)
-
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("OZG_SANA_"))
-    def cb_ozg_sana(call):
-        if not is_admin(call.from_user.id): return
-        bid = call.data.replace("OZG_SANA_", "")
-        from handlers.astate import astate
-        astate[call.from_user.id] = {"step": "ozg_sana", "bron_id": bid}
-        bot.send_message(call.message.chat.id, "Yangi sanani tanlang:", reply_markup=sana_kb())
-        bot.answer_callback_query(call.id)
-
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("OZG_KUN_"))
-    def cb_ozg_kun(call):
-        if not is_admin(call.from_user.id): return
-        bid = call.data.replace("OZG_KUN_", "")
-        from handlers.astate import astate
-        astate[call.from_user.id] = {"step": "ozg_kun", "bron_id": bid}
-        bot.send_message(call.message.chat.id, "Yangi kun sonini tanlang:", reply_markup=kunlar_kb())
+        tugash = tugash_sanasi(b["sana"], b["kunlar"])
+        matn_rebron = (f"Qayta bron qilish\n\n"
+                       f"Eski bron #{bid} bekor qilindi.\n"
+                       f"Ism: {b['ism']} | Tel: {b['telefon']}\n\n"
+                       f"Nechta kishi? (avval {b['kishi']} kishi edi)")
+        bot.send_message(call.message.chat.id, matn_rebron, reply_markup=kb)
         bot.answer_callback_query(call.id)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("ATASDIQ_"))
