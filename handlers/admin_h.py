@@ -194,12 +194,12 @@ def register(bot):
             "joyla_sana": bugun  # Avtomatik bugun
         }
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
-        for i in range(1, x["sigim"] + 2):
+        for i in range(1, 11):
             kb.add(str(i))
         kb.add("🔙 Admin menyu")
-        bot.send_message(call.message.chat.id,
-            f"🛏 {x['nomi']} — yangi joylash\n📅 Bugun: {bugun}\n\nNechta kishi?",
-            reply_markup=kb)
+        xnomi_str = x["nomi"]
+        joyla_matn = "Xona: " + xnomi_str + " | Bugun: " + bugun + "\n\nNechta kishi?"
+        bot.send_message(call.message.chat.id, joyla_matn, reply_markup=kb)
         bot.answer_callback_query(call.id)
 
     # Bronlar bo'limidan joylash
