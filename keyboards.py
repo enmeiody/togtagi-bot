@@ -108,11 +108,12 @@ def binolar_kb():
 
 
 def xonalar_admin_kb(bino_id):
+    from db import xona_kun_holati, HOLAT_EMOJI
     kb = types.InlineKeyboardMarkup(row_width=2)
     bugun = datetime.now().strftime("%d.%m.%Y")
     btns = []
     for x in get_xonalar(bino_id):
-        h = "🔴" if xona_band_mi(x["id"], bugun) else "🟢"
+        h = HOLAT_EMOJI[xona_kun_holati(x["id"], bugun)]
         yopiq = "🔒" if dict(x).get("yopiq", 0) else ""
         btns.append(types.InlineKeyboardButton(
             f"{h}{yopiq} {x['nomi']}({x['sigim']}👤)",
