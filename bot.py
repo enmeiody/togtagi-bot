@@ -83,6 +83,33 @@ def eslatmalar():
                                     f"{b['sana']}-{tugash_str} | {b['kishi']} kishi")
                             except: pass
 
+            # 12:15 - avtomatik xona bo'shatish
+            if hozir.hour == 12 and hozir.minute == 15:
+                bugun = hozir.strftime("%d.%m.%Y")
+                conn = get_db()
+                # Bugun tugayotgan bronlar
+                bronlar = conn.execute(
+                    "SELECT * FROM bronlar WHERE holat='tasdiqlangan'").fetchall()
+                conn.close()
+                for b in bronlar:
+                    bosh = datetime.strptime(b["sana"], "%d.%m.%Y")
+                    tugash = bosh + timedelta(days=b["kunlar"])
+                    if tugash.strftime("%d.%m.%Y") == bugun:
+                        # Xonalarni avtomatik bo'shatish
+                        from db import get_bron_xonalar, bosh_qil_sana
+                        xid_list = get_bron_xonalar(b["id"])
+                        for xid in xid_list:
+                            bosh_qil_sana(xid, bugun, 1)
+                        # Adminlarga xabar
+                        for aid in DIRECTOR_IDS:
+                            try:
+                                bot.send_message(aid,
+                                    f"🏠 Avtomatik bo'shatildi:\n"
+                                    f"#{b['id']} | {b['xona']}\n"
+                                    f"{b['ism']} | {b['telefon']}\n"
+                                    f"Bugun soat 12:15 da chiqishdi")
+                            except: pass
+
             # 20:00 - kunlik hisobot
             if hozir.hour == 20 and hozir.minute == 0:
                 from db import bugungi_stat
