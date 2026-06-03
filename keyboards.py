@@ -27,9 +27,9 @@ def ijtimoiy_kb():
 def admin_kb(uid=None):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(
-        "🏨 Xonalar", "📋 Bronlar",
+        "🏨 Qabulxona", "🏠 Xonaga joylash",
         "📊 Bugungi holat", "👥 Mehmonlar",
-        "🏠 Xonaga joylash", "📅 10 kunlik",
+        "🏢 Xonalar", "📋 Bronlar",
         "👤 Mijoz qidirish", "➕ Tezkor bron",
         "📸 Galereya", "📄 Hisobot",
         "🤖 AI malumot", "🔗 Ijtimoiy tarmoqlar",
