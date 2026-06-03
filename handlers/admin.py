@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from io import BytesIO
 from telebot import types
-from database import (db, get_xonalar, get_binolar, xona_band_mi, xona_kunlar_band,
+from db_module import (db, get_xonalar, get_binolar, xona_band_mi, xona_kunlar_band,
                       band_qil, bosh_qil_bron, bosh_qil_sana, bekor_qil_bron,
                       get_bron, get_bron_xonalar, tugash_sanasi as db_tugash,
                       format_narx, is_admin, is_director, log_harakat, qidir_mijoz,
