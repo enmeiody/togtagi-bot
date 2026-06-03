@@ -45,6 +45,8 @@ M = {
         "boglanish_matn": "Boglanish:\n\n📱 +998993342035\n📱 +998704902025\n📸 @togtagi\n⏰ 24/7",
         "galereya_yoq": "Hozircha rasm/video yoq.",
         "bronlarim_yoq": "Hozircha bronlaringiz yoq.",
+        "ijtimoiy": "🌐 Ijtimoiy tarmoqlar",
+        "ijtimoiy_yoq": "Hozircha ijtimoiy tarmoqlar yoq.",
         "xato": "Xatolik yuz berdi. Boglanish: +998993342035",
     },
     "uz_kril": {
@@ -82,6 +84,8 @@ M = {
         "boglanish_matn": "Боғланиш:\n\n📱 +998993342035\n📱 +998704902025\n📸 @togtagi\n⏰ 24/7",
         "galereya_yoq": "Ҳозирча расм/видео йўқ.",
         "bronlarim_yoq": "Ҳозирча бронларингиз йўқ.",
+        "ijtimoiy": "🌐 Ижтимоий тармоқлар",
+        "ijtimoiy_yoq": "Ҳозирча йўқ.",
         "xato": "Хатолик юз берди. Боғланиш: +998993342035",
     },
     "ru": {
@@ -119,6 +123,8 @@ M = {
         "boglanish_matn": "Контакты:\n\n📱 +998993342035\n📱 +998704902025\n📸 @togtagi\n⏰ 24/7",
         "galereya_yoq": "Пока нет фото/видео.",
         "bronlarim_yoq": "У вас пока нет броней.",
+        "ijtimoiy": "🌐 Социальные сети",
+        "ijtimoiy_yoq": "Пока нет.",
         "xato": "Произошла ошибка. Свяжитесь: +998993342035",
     }
 }
