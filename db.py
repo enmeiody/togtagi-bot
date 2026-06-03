@@ -100,7 +100,23 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         harakat TEXT,
+        qoshimcha TEXT,
         vaqt TEXT
+    );
+    CREATE TABLE IF NOT EXISTS ijtimoiy (
+        kalit TEXT PRIMARY KEY,
+        link TEXT,
+        nomi TEXT
+    );
+    CREATE TABLE IF NOT EXISTS joylashgan (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        xona_id INTEGER,
+        ism TEXT,
+        telefon TEXT,
+        kishi INTEGER,
+        boshlanish TEXT,
+        tugash TEXT,
+        bron_id TEXT
     );
     """)
 
@@ -108,6 +124,7 @@ def init_db():
     for sql in [
         "ALTER TABLE xonalar ADD COLUMN bino_id INTEGER DEFAULT 1",
         "ALTER TABLE xonalar ADD COLUMN aktiv INTEGER DEFAULT 1",
+        "ALTER TABLE xonalar ADD COLUMN yopiq INTEGER DEFAULT 0",
         "ALTER TABLE bronlar ADD COLUMN holat TEXT DEFAULT 'kutilmoqda'",
         "ALTER TABLE mijozlar ADD COLUMN bloklangan INTEGER DEFAULT 0",
         "ALTER TABLE mijozlar ADD COLUMN created_at TEXT",
@@ -133,6 +150,18 @@ def init_db():
         conn.executemany("INSERT INTO xonalar (bino_id,id,nomi,qavat,sigim,narx) VALUES (?,?,?,?,?,?)", xonalar)
 
     conn.execute("UPDATE xonalar SET bino_id=1 WHERE bino_id IS NULL")
+    
+    # Ijtimoiy tarmoqlar boshlang'ich
+    for kalit, nomi in [("telegram", "Telegram"), ("instagram", "Instagram"), ("youtube", "YouTube")]:
+        try:
+            conn.execute("INSERT OR IGNORE INTO ijtimoiy (kalit,link,nomi) VALUES (?,?,?)", (kalit, "", nomi))
+        except: pass
+    
+    # Statistika migration
+    try:
+        conn.execute("ALTER TABLE statistika ADD COLUMN qoshimcha TEXT")
+    except: pass
+    
     conn.commit()
     conn.close()
 
@@ -345,15 +374,114 @@ def format_narx(n):
 
 # ===== STATISTIKA =====
 
-def log_stat(user_id, harakat):
+def log_stat(user_id, harakat, qoshimcha=""):
     try:
         conn = get_db()
-        conn.execute("INSERT INTO statistika (user_id,harakat,vaqt) VALUES (?,?,?)",
-                     (user_id, harakat, datetime.now().strftime("%d.%m.%Y %H:%M")))
+        conn.execute("INSERT INTO statistika (user_id,harakat,qoshimcha,vaqt) VALUES (?,?,?,?)",
+                     (user_id, harakat, qoshimcha, datetime.now().strftime("%d.%m.%Y %H:%M")))
         conn.commit()
         conn.close()
     except:
         pass
+
+
+def get_ijtimoiy():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM ijtimoiy").fetchall()
+    conn.close()
+    return {r["kalit"]: {"link": r["link"], "nomi": r["nomi"]} for r in rows}
+
+
+def set_ijtimoiy(kalit, link):
+    conn = get_db()
+    conn.execute("UPDATE ijtimoiy SET link=? WHERE kalit=?", (link, kalit))
+    conn.commit()
+    conn.close()
+
+
+def get_mijoz_profil(user_id):
+    conn = get_db()
+    m = conn.execute("SELECT * FROM mijozlar WHERE user_id=?", (user_id,)).fetchone()
+    if m:
+        bronlar = conn.execute(
+            "SELECT COUNT(*) as c FROM bronlar WHERE user_id=?", (user_id,)).fetchone()["c"]
+        conn.close()
+        return dict(m) | {"bronlar_soni": bronlar}
+    conn.close()
+    return None
+
+
+def xonaga_joylashtir(xona_id, ism, telefon, kishi, bron_id=None):
+    from datetime import datetime, timedelta
+    boshlanish = datetime.now().strftime("%d.%m.%Y")
+    tugash = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO joylashgan (xona_id,ism,telefon,kishi,boshlanish,tugash,bron_id) VALUES (?,?,?,?,?,?,?)",
+        (xona_id, ism, telefon, kishi, boshlanish, tugash, bron_id or ""))
+    # Xonani band qil bugun uchun
+    conn.execute("INSERT OR IGNORE INTO band (xona_id,sana,bron_id) VALUES (?,?,?)",
+                (xona_id, boshlanish, bron_id or "joylashgan"))
+    conn.commit()
+    conn.close()
+
+
+def bugungi_joylashganlar():
+    bugun = datetime.now().strftime("%d.%m.%Y")
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT j.*, x.nomi as xona_nomi FROM joylashgan j LEFT JOIN xonalar x ON j.xona_id=x.id WHERE j.boshlanish=?",
+        (bugun,)).fetchall()
+    conn.close()
+    return rows
+
+
+def kengaytirilgan_stat():
+    conn = get_db()
+    bugun = datetime.now().strftime("%d.%m.%Y")
+    
+    # Bugungi
+    bugun_f = conn.execute(
+        "SELECT COUNT(DISTINCT user_id) as c FROM statistika WHERE vaqt LIKE ?",
+        (f"{bugun}%",)).fetchone()["c"]
+    
+    # Haftalik
+    from datetime import timedelta
+    hafta = (datetime.now() - timedelta(days=7)).strftime("%d.%m.%Y")
+    hafta_f = conn.execute(
+        "SELECT COUNT(DISTINCT user_id) as c FROM statistika WHERE vaqt >= ?",
+        (hafta,)).fetchone()["c"]
+    
+    # Oylik
+    oy = datetime.now().strftime("%d.%m.")
+    oy_f = conn.execute(
+        "SELECT COUNT(DISTINCT user_id) as c FROM statistika WHERE vaqt LIKE ?",
+        (f"%{oy}%",)).fetchone()["c"]
+    
+    # Eng ko'p harakatlar
+    harakatlar = conn.execute(
+        "SELECT harakat, COUNT(*) as c FROM statistika GROUP BY harakat ORDER BY c DESC LIMIT 10"
+    ).fetchall()
+    
+    # Soat bo'yicha taqsimot
+    soatlar = conn.execute(
+        "SELECT substr(vaqt, 12, 2) as soat, COUNT(*) as c FROM statistika GROUP BY soat ORDER BY soat"
+    ).fetchall()
+    
+    # Bronlar
+    jami_bronlar = conn.execute("SELECT COUNT(*) as c FROM bronlar").fetchone()["c"]
+    tasdiq_bronlar = conn.execute("SELECT COUNT(*) as c FROM bronlar WHERE holat='tasdiqlangan'").fetchone()["c"]
+    
+    # Mijozlar
+    jami_mijozlar = conn.execute("SELECT COUNT(*) as c FROM mijozlar").fetchone()["c"]
+    
+    conn.close()
+    return {
+        "bugun": bugun_f, "hafta": hafta_f, "oy": oy_f,
+        "harakatlar": harakatlar, "soatlar": soatlar,
+        "jami_bronlar": jami_bronlar, "tasdiq_bronlar": tasdiq_bronlar,
+        "jami_mijozlar": jami_mijozlar
+    }
 
 
 def bugungi_stat():
@@ -374,31 +502,90 @@ def bugungi_stat():
 
 # ===== KOMBINATSIYA =====
 
-def mos_kombinatsiya(kishi, guruh, sana, kunlar=1):
+def barcha_variantlar(kishi, guruh, sana, kunlar=1):
+    """Barcha mumkin variantlarni qaytaradi - istalgan kishi soni uchun"""
     xonalar = get_xonalar()
-    bosh = [x for x in xonalar if not xona_kunlar_band(x["id"], sana, kunlar)]
+    bosh = [dict(x) for x in xonalar 
+            if not xona_kunlar_band(x["id"], sana, kunlar) and x.get("yopiq", 0) == 0]
     if not bosh:
         return []
 
-    # Bitta xona
+    afzal_qavat = 1 if guruh == "oila" else 2
+    variantlar = []
+
+    # 1. Bitta xona - to'liq mos
     for x in sorted(bosh, key=lambda a: a["sigim"]):
         if x["sigim"] >= kishi:
-            return [{"xonalar": [dict(x)], "tur": "bitta", "ortiqcha": x["sigim"] - kishi}]
+            variantlar.append({
+                "xonalar": [x],
+                "tur": "bitta",
+                "jami_sigim": x["sigim"],
+                "ortiqcha": x["sigim"] - kishi,
+                "afzal": x["qavat"] == afzal_qavat
+            })
+            break  # Eng kichik mosini birinchi
+
+    # 2. Bitta xona - 1 ta ortiqcha (siqilsa ham bo'ladi)
+    for x in sorted(bosh, key=lambda a: a["sigim"]):
         if x["sigim"] == kishi - 1:
-            return [{"xonalar": [dict(x)], "tur": "ortiqcha", "ortiqcha": 1}]
-
-    # Kombinatsiya
-    afzal = 1 if guruh == "oila" else 2
-    tartiblangan = (sorted([x for x in bosh if x["qavat"] == afzal], key=lambda a: a["sigim"], reverse=True) +
-                    sorted([x for x in bosh if x["qavat"] != afzal], key=lambda a: a["sigim"], reverse=True))
-    tanlangan = []
-    jami = 0
-    for x in tartiblangan:
-        if jami >= kishi:
+            variantlar.append({
+                "xonalar": [x],
+                "tur": "ortiqcha_1",
+                "jami_sigim": x["sigim"],
+                "ortiqcha": -1,
+                "afzal": x["qavat"] == afzal_qavat
+            })
             break
-        tanlangan.append(dict(x))
-        jami += x["sigim"]
 
-    if jami >= kishi:
-        return [{"xonalar": tanlangan, "tur": "kombinatsiya", "ortiqcha": jami - kishi}]
-    return []
+    # 3. Kombinatsiya - afzal qavatdan boshlash
+    def topish(kishi_qolgan, mavjud, tanlangan):
+        if kishi_qolgan <= 0:
+            return tanlangan
+        if not mavjud:
+            return None
+        for i, x in enumerate(mavjud):
+            if x["sigim"] >= kishi_qolgan:
+                return tanlangan + [x]
+        # Eng kattasidan boshlash
+        x = mavjud[0]
+        natija = topish(kishi_qolgan - x["sigim"], mavjud[1:], tanlangan + [x])
+        if natija:
+            return natija
+        return topish(kishi_qolgan, mavjud[1:], tanlangan)
+
+    afzal = sorted([x for x in bosh if x["qavat"] == afzal_qavat], key=lambda a: a["sigim"], reverse=True)
+    boshqa = sorted([x for x in bosh if x["qavat"] != afzal_qavat], key=lambda a: a["sigim"], reverse=True)
+
+    # Afzal qavat kombinatsiyasi
+    kom1 = topish(kishi, afzal + boshqa, [])
+    if kom1 and len(kom1) > 1:
+        jami = sum(x["sigim"] for x in kom1)
+        variantlar.append({
+            "xonalar": kom1,
+            "tur": "kombinatsiya",
+            "jami_sigim": jami,
+            "ortiqcha": jami - kishi,
+            "afzal": True
+        })
+
+    # Aralash kombinatsiya (agar yuqoridagidan farqli bo'lsa)
+    kom2 = topish(kishi, boshqa + afzal, [])
+    if kom2 and len(kom2) > 1:
+        ids1 = set(x["id"] for x in (kom1 or []))
+        ids2 = set(x["id"] for x in kom2)
+        if ids1 != ids2:
+            jami = sum(x["sigim"] for x in kom2)
+            variantlar.append({
+                "xonalar": kom2,
+                "tur": "kombinatsiya_2",
+                "jami_sigim": jami,
+                "ortiqcha": jami - kishi,
+                "afzal": False
+            })
+
+    return variantlar[:4]  # Max 4 ta variant
+
+
+def mos_kombinatsiya(kishi, guruh, sana, kunlar=1):
+    variantlar = barcha_variantlar(kishi, guruh, sana, kunlar)
+    return variantlar[0:1] if variantlar else []
