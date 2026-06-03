@@ -106,20 +106,51 @@ def register(bot):
     @bot.message_handler(func=lambda m: m.text == "📅 10 kunlik" and is_admin(m.from_user.id))
     def h_10kun(msg):
         bugun = datetime.now().date()
-        sanalar = [(bugun + timedelta(days=i)) for i in range(10)]
-        matn = "10 kunlik holat:\n\n"
-        matn += "    " + " ".join(k.strftime("%d/%m") for k in sanalar) + "\n\n"
-        kb = types.InlineKeyboardMarkup(row_width=1)
+        kunlar_list = [(bugun + timedelta(days=i)) for i in range(10)]
+        
+        # Sarlavha
+        matn = "📅 10 KUNLIK XONALAR HOLATI\n"
+        matn += "─" * 32 + "\n"
+        
+        # Sanalar qatori
+        matn += "Xona     "
+        for kun in kunlar_list:
+            matn += kun.strftime("%d") + " "
+        matn += "\n"
+        matn += "─" * 32 + "\n"
+        
+        # Har bir xona
         for x in get_xonalar():
-            satri = f"{x['nomi']:8} "
-            for kun in sanalar:
-                satri += "🔴" if xona_band_mi(x["id"], kun.strftime("%d.%m.%Y")) else "🟢"
+            nom = x["nomi"].replace("-xona", "")
+            satri = f"{nom:6}   "
+            for kun in kunlar_list:
+                sana_str = kun.strftime("%d.%m.%Y")
+                if xona_band_mi(x["id"], sana_str):
+                    # Kim bron qilgan
+                    conn = get_db()
+                    brow = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?", 
+                                       (x["id"], sana_str)).fetchone()
+                    conn.close()
+                    satri += "🔴"
+                else:
+                    satri += "🟢"
+                satri += " "
             matn += satri + "\n"
+        
+        matn += "─" * 32 + "\n"
+        matn += "🟢 Bo'sh  🔴 Band\n\n"
+        
+        # Sanalar
+        matn += "Sanalar: " + " | ".join(k.strftime("%d/%m") for k in kunlar_list)
+        
+        kb = types.InlineKeyboardMarkup(row_width=2)
+        for x in get_xonalar():
+            bugun_h = "🔴" if xona_band_mi(x["id"], bugun.strftime("%d.%m.%Y")) else "🟢"
             kb.add(types.InlineKeyboardButton(
-                f"{x['nomi']} - Ko'rish/Bron",
+                f"{bugun_h} {x['nomi']} - Ko'rish",
                 callback_data=f"AX_{x['id']}"))
-        matn += "\n🟢=Bosh 🔴=Band"
-        bot.send_message(msg.chat.id, matn, reply_markup=kb)
+        
+        bot.send_message(msg.chat.id, f"<pre>{matn}</pre>", parse_mode="HTML", reply_markup=kb)
 
     @bot.message_handler(func=lambda m: m.text == "👤 Mijoz qidirish" and is_admin(m.from_user.id))
     def h_mijoz_qidir(msg):
@@ -217,6 +248,173 @@ def register(bot):
         kb.add(types.InlineKeyboardButton("➕ Admin qoshish", callback_data="ADD_ADM"))
         bot.send_message(msg.chat.id, matn, reply_markup=kb)
 
+    @bot.message_handler(func=lambda m: m.text == "🏠 Xonaga joylash" and is_admin(m.from_user.id))
+    def h_joylash(msg):
+        from db import bugungi_joylashganlar
+        # Bugungi bronlar (keluvchilar)
+        bugun = datetime.now().strftime("%d.%m.%Y")
+        conn = get_db()
+        keluvchilar = conn.execute(
+            "SELECT * FROM bronlar WHERE sana=? AND holat='tasdiqlangan'", (bugun,)).fetchall()
+        conn.close()
+        
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        matn = "🏠 XONAGA JOYLASH\n\n"
+        
+        if keluvchilar:
+            matn += "📋 Bugun keluvchi bronlar:\n\n"
+            for b in keluvchilar:
+                tugash = tugash_sanasi(b["sana"], b["kunlar"])
+                kb.add(types.InlineKeyboardButton(
+                    f"✅ {b['xona']} | {b['ism']} ({b['kishi']}👤)",
+                    callback_data=f"JOYLA_BRON_{b['id']}"))
+        
+        # Bo'sh xonalar
+        bosh_xonalar_list = [x for x in get_xonalar() if not xona_band_mi(x["id"], bugun)]
+        if bosh_xonalar_list:
+            matn += "\n🟢 Hozir bo'sh xonalar:\n"
+            for x in bosh_xonalar_list:
+                q = "🏠" if x["qavat"] == 1 else "🏢"
+                matn += f"  {q} {x['nomi']} ({x['sigim']}👤)\n"
+                kb.add(types.InlineKeyboardButton(
+                    f"🟢 {x['nomi']} ({x['sigim']}👤) - Yangi joylash",
+                    callback_data=f"JOYLA_YANGI_{x['id']}"))
+        else:
+            matn += "\nHozir barcha xonalar band"
+        
+        bot.send_message(msg.chat.id, matn, reply_markup=kb)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("JOYLA_BRON_"))
+    def cb_joyla_bron(call):
+        if not is_admin(call.from_user.id): return
+        bid = call.data.replace("JOYLA_BRON_", "")
+        b = get_bron(bid)
+        if not b: return
+        # Xonalarni joylashtirildi deb belgilash
+        from db import xonaga_joylashtir, get_bron_xonalar
+        xid_list = get_bron_xonalar(bid)
+        for xid in xid_list:
+            xonaga_joylashtir(xid, b["ism"], b["telefon"], b["kishi"], bid)
+        
+        tugash = tugash_sanasi(b["sana"], b["kunlar"])
+        bot.edit_message_text(
+            f"✅ Joylashtirildi!\n\n{b['ism']} | {b['telefon']}\n"
+            f"Xona: {b['xona']}\nSana: {b['sana']}-{tugash}",
+            call.message.chat.id, call.message.message_id)
+        
+        # Mijozga xabar
+        if b["user_id"]:
+            try:
+                bot.send_message(b["user_id"],
+                    f"Xush kelibsiz! 🏔\n\nXonangiz tayyor:\n{b['xona']}\n\n"
+                    f"Checkout: {tugash} soat 12:00\n\n{TELEFON1}")
+            except: pass
+        bot.answer_callback_query(call.id, "Joylashtirildi!")
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("JOYLA_YANGI_"))
+    def cb_joyla_yangi(call):
+        if not is_admin(call.from_user.id): return
+        xid = int(call.data.replace("JOYLA_YANGI_", ""))
+        from handlers.astate import astate
+        astate[call.from_user.id] = {"step": "joyla_ism", "joyla_xid": xid}
+        conn = get_db()
+        xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
+        conn.close()
+        bot.send_message(call.message.chat.id, f"{xnomi}\n\nMijoz ismi:")
+        bot.answer_callback_query(call.id)
+
+    # Ijtimoiy tarmoqlar sozlash
+    @bot.message_handler(func=lambda m: m.text == "🔗 Ijtimoiy tarmoqlar" and is_admin(m.from_user.id))
+    def h_ijtimoiy_sozlash(msg):
+        from db import get_ijtimoiy
+        ijt = get_ijtimoiy()
+        matn = "🔗 Ijtimoiy tarmoqlar sozlash:\n\n"
+        for kalit, info in ijt.items():
+            link = info["link"] or "qoshilmagan"
+            matn += f"{info['nomi']}: {link}\n"
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            types.InlineKeyboardButton("📱 Telegram linkini sozla", callback_data="IJT_telegram"),
+            types.InlineKeyboardButton("📸 Instagram linkini sozla", callback_data="IJT_instagram"),
+            types.InlineKeyboardButton("🎬 YouTube linkini sozla", callback_data="IJT_youtube"),
+        )
+        bot.send_message(msg.chat.id, matn, reply_markup=kb)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("IJT_"))
+    def cb_ijt(call):
+        if not is_admin(call.from_user.id): return
+        kalit = call.data.replace("IJT_", "")
+        from handlers.astate import astate
+        astate[call.from_user.id] = {"step": f"ijt_{kalit}"}
+        nomlar = {"telegram": "Telegram", "instagram": "Instagram", "youtube": "YouTube"}
+        bot.send_message(call.message.chat.id, 
+            f"{nomlar[kalit]} linkini kiriting:\nMisol: https://t.me/togtagi_resort")
+        bot.answer_callback_query(call.id)
+
+    # Statistika rivojlangan
+    @bot.message_handler(func=lambda m: m.text == "📊 Statistika" and is_director(m.from_user.id))
+    def h_stat(msg):
+        from db import kengaytirilgan_stat
+        stat = kengaytirilgan_stat()
+        bugun = datetime.now().strftime("%d.%m.%Y")
+        
+        matn = f"📊 STATISTIKA\n{'='*30}\n\n"
+        matn += f"👥 Foydalanuvchilar:\n"
+        matn += f"  Bugun: {stat['bugun']}\n"
+        matn += f"  Hafta: {stat['hafta']}\n"
+        matn += f"  Oy: {stat['oy']}\n"
+        matn += f"  Jami: {stat['jami_mijozlar']}\n\n"
+        matn += f"🎫 Bronlar:\n"
+        matn += f"  Jami: {stat['jami_bronlar']}\n"
+        matn += f"  Tasdiqlangan: {stat['tasdiq_bronlar']}\n\n"
+        
+        matn += f"📈 Top harakatlar:\n"
+        for h in stat["harakatlar"][:8]:
+            matn += f"  {h['harakat']}: {h['c']}\n"
+        
+        matn += f"\n⏰ Faol vaqtlar:\n"
+        for s in stat["soatlar"]:
+            if s["soat"] and s["c"] > 2:
+                bar = "█" * min(s["c"], 10)
+                matn += f"  {s['soat']}:00 {bar} {s['c']}\n"
+        
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("📄 TXT hisobot", callback_data="STAT_TXT"))
+        bot.send_message(msg.chat.id, matn, reply_markup=kb)
+
+    @bot.callback_query_handler(func=lambda c: c.data == "STAT_TXT")
+    def cb_stat_txt(call):
+        if not is_director(call.from_user.id): return
+        from db import kengaytirilgan_stat, get_db as gdb
+        stat = kengaytirilgan_stat()
+        conn = gdb()
+        bronlar = conn.execute("SELECT * FROM bronlar ORDER BY created_at DESC LIMIT 50").fetchall()
+        mijozlar = conn.execute("SELECT * FROM mijozlar ORDER BY last_active DESC LIMIT 50").fetchall()
+        conn.close()
+        
+        matn = f"STATISTIKA HISOBOTI\n{datetime.now().strftime('%d.%m.%Y %H:%M')}\n{'='*40}\n\n"
+        matn += f"FOYDALANUVCHILAR:\nBugun: {stat['bugun']} | Hafta: {stat['hafta']} | Oy: {stat['oy']} | Jami: {stat['jami_mijozlar']}\n\n"
+        matn += f"BRONLAR:\nJami: {stat['jami_bronlar']} | Tasdiqlangan: {stat['tasdiq_bronlar']}\n\n"
+        matn += "TOP HARAKATLAR:\n"
+        for h in stat["harakatlar"]:
+            matn += f"  {h['harakat']}: {h['c']} marta\n"
+        matn += "\nFAOL VAQTLAR:\n"
+        for s in stat["soatlar"]:
+            if s["soat"]:
+                matn += f"  {s['soat']}:00 - {s['c']} ta\n"
+        matn += "\nSO'NGGI BRONLAR:\n" + "="*40 + "\n"
+        for b in bronlar:
+            matn += f"#{b['id']} | {b['ism']} | {b['telefon']} | {b['sana']} | {b['holat']}\n"
+        matn += "\nMIJOZLAR BAZASI:\n" + "="*40 + "\n"
+        for m in mijozlar:
+            matn += f"{m['ism']} | {m.get('telefon','')} | @{m.get('username','')} | {m.get('last_active','')}\n"
+        
+        from io import BytesIO
+        buf = BytesIO(matn.encode("utf-8"))
+        buf.name = f"hisobot_{datetime.now().strftime('%d%m%Y')}.txt"
+        bot.send_document(call.message.chat.id, buf, caption="📄 To'liq hisobot")
+        bot.answer_callback_query(call.id)
+
     @bot.message_handler(func=lambda m: m.text == "🔙 Asosiy menyu" and is_admin(m.from_user.id))
     def h_asosiy(msg):
         from handlers.astate import astate
@@ -261,15 +459,17 @@ def register(bot):
         conn.close()
         bugun = datetime.now().strftime("%d.%m.%Y")
         h = "🔴 Band" if xona_band_mi(xid, bugun) else "🟢 Bosh"
+        yopiq = x.get("yopiq", 0)
+        yopiq_txt = " | 🔒 Yopiq" if yopiq else ""
         matn = (f"{x['nomi']} | {x['bino_nomi']}\n"
                 f"Qavat: {x['qavat']} | Joy: {x['sigim']}👤\n"
                 f"Narx: {format_narx(x['narx'])} som\n"
-                f"Bugun: {h} | Rasmlar: {rasmlar}")
+                f"Bugun: {h}{yopiq_txt} | Rasmlar: {rasmlar}")
         try:
             bot.edit_message_text(matn, call.message.chat.id, call.message.message_id,
-                                  reply_markup=xona_detail_kb(xid, x["bino_id"]))
+                                  reply_markup=xona_detail_kb(xid, x["bino_id"], yopiq))
         except:
-            bot.send_message(call.message.chat.id, matn, reply_markup=xona_detail_kb(xid, x["bino_id"]))
+            bot.send_message(call.message.chat.id, matn, reply_markup=xona_detail_kb(xid, x["bino_id"], yopiq))
         bot.answer_callback_query(call.id)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("AXB_"))
@@ -432,6 +632,34 @@ def register(bot):
                 bot.send_media_group(call.message.chat.id, media)
             except: pass
         bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("XONA_YOPIQ_"))
+    def cb_xona_yopiq(call):
+        if not is_admin(call.from_user.id): return
+        xid = int(call.data.replace("XONA_YOPIQ_", ""))
+        conn = get_db()
+        conn.execute("UPDATE xonalar SET yopiq=1 WHERE id=?", (xid,))
+        xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
+        conn.commit()
+        conn.close()
+        bot.answer_callback_query(call.id, f"{xnomi} yopildi!")
+        bot.send_message(call.message.chat.id, 
+            f"🔒 {xnomi} brondan yopildi.\nMijozlar bu xonani bron qila olmaydi.",
+            reply_markup=admin_kb(call.from_user.id))
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("XONA_OCHIQ_"))
+    def cb_xona_ochiq(call):
+        if not is_admin(call.from_user.id): return
+        xid = int(call.data.replace("XONA_OCHIQ_", ""))
+        conn = get_db()
+        conn.execute("UPDATE xonalar SET yopiq=0 WHERE id=?", (xid,))
+        xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
+        conn.commit()
+        conn.close()
+        bot.answer_callback_query(call.id, f"{xnomi} ochildi!")
+        bot.send_message(call.message.chat.id,
+            f"🔓 {xnomi} brondan ochildi.\nMijozlar yana bron qila oladi.",
+            reply_markup=admin_kb(call.from_user.id))
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("DEL_XRASM_"))
     def cb_del_xrasm(call):
@@ -875,4 +1103,32 @@ def admin_matn_handler(bot, msg, uid, text, astate):
             except:
                 bot.send_message(cid, "Yuborib bolmadi (bot bloklangan)")
         astate.pop(uid, None)
+        return
+
+    if step == "joyla_ism":
+        st["joyla_ism"] = text
+        st["step"] = "joyla_tel"
+        astate[uid] = st
+        bot.send_message(cid, "Telefon raqami:")
+        return
+
+    if step == "joyla_tel":
+        from db import xonaga_joylashtir, get_db as gdb
+        xid = st["joyla_xid"]
+        conn = gdb()
+        xnomi = conn.execute("SELECT nomi,sigim FROM xonalar WHERE id=?", (xid,)).fetchone()
+        conn.close()
+        xonaga_joylashtir(xid, st["joyla_ism"], text, xnomi["sigim"])
+        astate.pop(uid, None)
+        bot.send_message(cid,
+            f"✅ Joylashtirildi!\n{xnomi['nomi']}\n{st['joyla_ism']} | {text}",
+            reply_markup=admin_kb(uid))
+        return
+
+    if step and step.startswith("ijt_"):
+        kalit = step.replace("ijt_", "")
+        from db import set_ijtimoiy
+        set_ijtimoiy(kalit, text)
+        astate.pop(uid, None)
+        bot.send_message(cid, f"✅ {kalit} linki saqlandi:\n{text}", reply_markup=admin_kb(uid))
         return
