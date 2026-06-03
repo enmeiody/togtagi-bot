@@ -179,6 +179,16 @@ def register(bot):
         state.pop(uid, None)
         bot.send_message(uid, "👇", reply_markup=asosiy_kb(uid))
 
+    @bot.message_handler(func=lambda m: m.text == "🌐 Ijtimoiy tarmoqlar")
+    def h_ijtimoiy(msg):
+        uid = msg.from_user.id
+        from keyboards import ijtimoiy_kb
+        kb = ijtimoiy_kb()
+        if not kb.keyboard:
+            bot.send_message(uid, "Hozircha ijtimoiy tarmoqlar yoq.")
+        else:
+            bot.send_message(uid, "🌐 Ijtimoiy tarmoqlar:", reply_markup=kb)
+
     # ===== CALLBACKS =====
 
     @bot.callback_query_handler(func=lambda c: c.data == "CB_BRON")
@@ -332,8 +342,11 @@ def register(bot):
             bot.answer_callback_query(call.id)
             return
 
-        kombinatsiyalar = mos_kombinatsiya(kishi, guruh, sana, kunlar)
-        if not kombinatsiyalar:
+        # Barcha variantlarni ko'rsat
+        from db import barcha_variantlar
+        variantlar = barcha_variantlar(kishi, guruh, sana, kunlar)
+        
+        if not variantlar:
             try:
                 bot.edit_message_text(txt(uid, "xona_yoq"), cid, call.message.message_id, reply_markup=sana_kb())
             except:
@@ -341,25 +354,40 @@ def register(bot):
             bot.answer_callback_query(call.id)
             return
 
-        kom = kombinatsiyalar[0]
-        xonalar = kom["xonalar"]
-        jami_narx = sum(x["narx"] for x in xonalar) * kunlar
-        xona_nomi = " + ".join(x["nomi"] for x in xonalar)
-
-        matn = f"Sana: {sana} - {tugash} | {kunlar} kun | {kishi} kishi\n\n"
-        for x in xonalar:
-            q = "1-qavat" if x["qavat"] == 1 else "2-qavat"
-            matn += f"{x['nomi']} | {q} | {x['sigim']}👤 | {format_narx(x['narx']*kunlar)} som\n"
-        if len(xonalar) > 1:
-            matn += f"\nJami: {format_narx(jami_narx)} som"
-        if kom["tur"] == "ortiqcha":
-            matn += f"\n\n{txt(uid, 'ortiqcha').format(xona=xonalar[0]['nomi'], sigim=xonalar[0]['sigim'], kishi=kishi)}"
-
-        ids = "_".join(str(x["id"]) for x in xonalar)
+        matn = f"📅 {sana} - {tugash} | {kunlar} kun | 👥 {kishi} kishi\n\n"
+        matn += "Xona variantlari:\n\n"
+        
         kb = types.InlineKeyboardMarkup(row_width=1)
-        kb.add(types.InlineKeyboardButton(
-            f"✅ {xona_nomi} — {format_narx(jami_narx)} so'm",
-            callback_data=f"XT_{ids}_{sana}_{kunlar}"))
+        
+        tur_emoji = {
+            "bitta": "✅",
+            "ortiqcha_1": "⚠️",
+            "kombinatsiya": "🔢",
+            "kombinatsiya_2": "🔄"
+        }
+        tur_izoh = {
+            "bitta": "",
+            "ortiqcha_1": " (1 kishi ko'p yotadi)",
+            "kombinatsiya": " (bir necha xona)",
+            "kombinatsiya_2": " (aralash qavat)"
+        }
+        
+        for v in variantlar:
+            xonalar = v["xonalar"]
+            jami_narx = sum(x["narx"] for x in xonalar) * kunlar
+            xona_nomi = " + ".join(x["nomi"] for x in xonalar)
+            jami_sigim = v["jami_sigim"]
+            emoji = tur_emoji.get(v["tur"], "🔹")
+            izoh = tur_izoh.get(v["tur"], "")
+            narx_str = format_narx(jami_narx)
+            
+            matn += f"{emoji} {xona_nomi} — {jami_sigim}👤 — {narx_str} som{izoh}\n"
+            
+            ids = "_".join(str(x["id"]) for x in xonalar)
+            kb.add(types.InlineKeyboardButton(
+                f"{emoji} {xona_nomi} — {narx_str}",
+                callback_data=f"XT_{ids}_{sana}_{kunlar}"))
+
         kb.add(types.InlineKeyboardButton("📋 Barcha bosh xonalar", callback_data=f"BARCHAX_{sana}_{kunlar}_{kishi}"))
 
         try:
@@ -538,12 +566,14 @@ def register(bot):
         text = msg.text or ""
 
         # Admin tugmalarini o'tkazib yuborish
-        if is_admin(uid) and text in [
+        ADMIN_BTNLAR = [
             "🏨 Xonalar", "📋 Bronlar", "📊 Bugungi holat", "👥 Mehmonlar",
             "📅 10 kunlik", "👤 Mijoz qidirish", "➕ Tezkor bron", "📸 Galereya",
             "📄 Hisobot", "🤖 AI malumot", "🔙 Asosiy menyu", "👮 Adminlar",
-            "📊 Statistika", "🔙 Admin menyu"
-        ]:
+            "📊 Statistika", "🔙 Admin menyu", "🏠 Xonaga joylash",
+            "🔗 Ijtimoiy tarmoqlar sozlash"
+        ]
+        if is_admin(uid) and text in ADMIN_BTNLAR:
             return
 
         if text.startswith("/"):
