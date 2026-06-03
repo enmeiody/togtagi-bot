@@ -25,7 +25,7 @@ def register(bot):
 
     # ===== ASOSIY TUGMALAR =====
 
-    @bot.message_handler(func=lambda m: m.text == "🏨 Xonalar" and is_admin(m.from_user.id))
+    @bot.message_handler(func=lambda m: m.text == "🏢 Xonalar" and is_admin(m.from_user.id))
     def h_xonalar(msg):
         bot.send_message(msg.chat.id, "Binoni tanlang:", reply_markup=binolar_kb())
         if is_director(msg.from_user.id):
@@ -111,7 +111,7 @@ def register(bot):
         bot.edit_message_text("✅ Chiqish qayd qilindi!", call.message.chat.id, call.message.message_id)
         bot.answer_callback_query(call.id, "Chiqdi!")
 
-    @bot.message_handler(func=lambda m: m.text == "📅 10 kunlik" and is_admin(m.from_user.id))
+    @bot.message_handler(func=lambda m: m.text == "🏨 Qabulxona" and is_admin(m.from_user.id))
     def h_10kun(msg):
         bugun = datetime.now().date()
         kunlar_list = [(bugun + timedelta(days=i)) for i in range(10)]
