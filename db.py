@@ -505,8 +505,11 @@ def bugungi_stat():
 def barcha_variantlar(kishi, guruh, sana, kunlar=1):
     """Barcha mumkin variantlarni qaytaradi - istalgan kishi soni uchun"""
     xonalar = get_xonalar()
-    bosh = [dict(x) for x in xonalar 
-            if not xona_kunlar_band(x["id"], sana, kunlar) and x.get("yopiq", 0) == 0]
+    bosh = []
+    for x in xonalar:
+        xd = dict(x)
+        if not xona_kunlar_band(xd["id"], sana, kunlar) and xd.get("yopiq", 0) == 0:
+            bosh.append(xd)
     if not bosh:
         return []
 
