@@ -217,6 +217,27 @@ def xona_kunlar_band(xid, bosh_sana, kunlar):
             return True
     return False
 
+
+def xona_bugun_boshadimi(xid, sana):
+    """Xona shu sanada band, lekin avvalgi bron tugash sanasi = shu sana bo'lsa True"""
+    conn = get_db()
+    row = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?", (xid, sana)).fetchone()
+    if not row:
+        conn.close()
+        return False
+    bid = row["bron_id"]
+    if not bid or bid == "admin":
+        conn.close()
+        return False
+    # Bu bron ning tugash sanasi = shu sana ekanligini tekshir
+    b = conn.execute("SELECT * FROM bronlar WHERE id=?", (bid,)).fetchone()
+    conn.close()
+    if not b:
+        return False
+    bosh = datetime.strptime(b["sana"], "%d.%m.%Y")
+    tugash = (bosh + timedelta(days=b["kunlar"])).strftime("%d.%m.%Y")
+    return tugash == sana  # Bu sana tugash sanasi = bugun bo'sh bo'ladi
+
 def band_qil(xid, bosh_sana, kunlar, bron_id):
     bosh = datetime.strptime(bosh_sana, "%d.%m.%Y").date()
     conn = get_db()
