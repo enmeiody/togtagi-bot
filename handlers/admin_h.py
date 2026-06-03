@@ -185,17 +185,21 @@ def register(bot):
         conn = get_db()
         x = conn.execute("SELECT * FROM xonalar WHERE id=?", (xid,)).fetchone()
         conn.close()
+        # Bugun joylashadi, faqat kishi va kun so'rash
+        bugun = datetime.now().strftime("%d.%m.%Y")
         astate[call.from_user.id] = {
             "step": "joyla_kishi",
             "joyla_xid": xid,
-            "joyla_xnomi": x["nomi"]
+            "joyla_xnomi": x["nomi"],
+            "joyla_sana": bugun  # Avtomatik bugun
         }
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
         for i in range(1, x["sigim"] + 2):
             kb.add(str(i))
         kb.add("🔙 Admin menyu")
         bot.send_message(call.message.chat.id,
-            f"🛏 {x['nomi']} — yangi joylash\n\nNechta kishi?", reply_markup=kb)
+            f"🛏 {x['nomi']} — yangi joylash\n📅 Bugun: {bugun}\n\nNechta kishi?",
+            reply_markup=kb)
         bot.answer_callback_query(call.id)
 
     # Bronlar bo'limidan joylash
@@ -1024,9 +1028,9 @@ def admin_matn_handler(bot, msg, uid, text, astate):
         try:
             n = int(text)
             st["joyla_kishi"] = n
-            st["step"] = "joyla_sana"
+            st["step"] = "joyla_kun"
             astate[uid] = st
-            bot.send_message(cid, f"{n} kishi\nQaysi sanadan? (bugun uchun birinchi tugma)", reply_markup=sana_kb())
+            bot.send_message(cid, f"{n} kishi\nNecha kun turadi?", reply_markup=kunlar_kb())
         except:
             bot.send_message(cid, "Raqam kiriting")
         return
