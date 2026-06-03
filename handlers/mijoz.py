@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from telebot import types
-from database import (db, get_xonalar, get_binolar, xona_band_mi, xona_kunlar_band,
+from db_module import (db, get_xonalar, get_binolar, xona_band_mi, xona_kunlar_band,
                       band_qil, bosh_qil_bron, bekor_qil_bron, get_bron, get_bron_xonalar,
                       format_narx, get_til, set_til, get_yoki_yarat_mijoz, log_harakat, is_admin)
 from texts import t, TELEFON1, TELEFON2, INSTAGRAM, MATNLAR
@@ -309,7 +309,7 @@ def register(bot):
     @bot.callback_query_handler(func=lambda c: c.data.startswith("kun_"))
     def cb_kun_mijoz(call):
         from handlers.admin_state import admin_state
-        from database import band_qil, bosh_qil_sana, format_narx
+        from db_module import band_qil, bosh_qil_sana, format_narx
         uid = call.from_user.id
         cid = call.message.chat.id
         kunlar = int(call.data.replace("kun_", ""))
