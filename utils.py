@@ -1,7 +1,7 @@
 import random
 import string
 from datetime import datetime, timedelta
-from database import db, format_narx, xona_kunlar_band, get_xonalar
+from db_module import db, format_narx, xona_kunlar_band, get_xonalar
 
 
 def bron_id_gen():
@@ -116,7 +116,7 @@ def o_n_kunlik_holat():
         for sana in sanalar:
             kun_dt = datetime.strptime(sana, "%d.%m.%Y")
             kun_nom = kun_nomlar[kun_dt.weekday()]
-            from database import xona_band_mi
+            from db_module import xona_band_mi
             if xona_band_mi(x["id"], sana):
                 kun_satri += f"🔴"
             else:
