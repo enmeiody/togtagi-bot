@@ -29,9 +29,10 @@ def admin_kb(uid=None):
     kb.add(
         "🏨 Xonalar", "📋 Bronlar",
         "📊 Bugungi holat", "👥 Mehmonlar",
-        "📅 10 kunlik", "👤 Mijoz qidirish",
-        "➕ Tezkor bron", "📸 Galereya",
-        "📄 Hisobot", "🤖 AI malumot",
+        "🏠 Xonaga joylash", "📅 10 kunlik",
+        "👤 Mijoz qidirish", "➕ Tezkor bron",
+        "📸 Galereya", "📄 Hisobot",
+        "🤖 AI malumot", "🔗 Ijtimoiy tarmoqlar",
         "🔙 Asosiy menyu"
     )
     from db import is_director
@@ -76,6 +77,8 @@ def xonalar_kb(sana, kunlar, kishi=1):
     for x in xonalar:
         if xona_kunlar_band(x["id"], sana, kunlar):
             continue
+        if dict(x).get("yopiq", 0):
+            continue
         if x["sigim"] < kishi - 1:
             continue
         mos = "✅" if x["sigim"] >= kishi else "⚠️"
@@ -88,7 +91,7 @@ def xonalar_kb(sana, kunlar, kishi=1):
 
 
 def binolar_kb():
-    from db import get_binolar, is_director
+    from db import get_binolar
     kb = types.InlineKeyboardMarkup(row_width=1)
     for b in get_binolar():
         kb.add(types.InlineKeyboardButton(f"🏢 {b['nomi']}", callback_data=f"BINO_{b['id']}"))
@@ -96,19 +99,18 @@ def binolar_kb():
 
 
 def xonalar_admin_kb(bino_id):
-    from db import get_xonalar, xona_band_mi
     kb = types.InlineKeyboardMarkup(row_width=2)
     bugun = datetime.now().strftime("%d.%m.%Y")
     for x in get_xonalar(bino_id):
         h = "🔴" if xona_band_mi(x["id"], bugun) else "🟢"
+        yopiq = "🔒" if dict(x).get("yopiq", 0) else ""
         kb.add(types.InlineKeyboardButton(
-            f"{h} {x['nomi']} ({x['sigim']}👤)",
+            f"{h}{yopiq} {x['nomi']} ({x['sigim']}👤)",
             callback_data=f"AX_{x['id']}"))
     return kb
 
 
-def xona_detail_kb(xid, bino_id):
-    from db import is_director
+def xona_detail_kb(xid, bino_id, yopiq=0):
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
         types.InlineKeyboardButton("📅 Bronlar", callback_data=f"AXB_{xid}"),
@@ -117,6 +119,10 @@ def xona_detail_kb(xid, bino_id):
         types.InlineKeyboardButton("📸 Rasmlar", callback_data=f"AXRASM_{xid}"),
         types.InlineKeyboardButton("🎥 Videolar", callback_data=f"AXVIDEO_{xid}"),
         types.InlineKeyboardButton("💰 Narx", callback_data=f"AXNARX_{xid}"),
-        types.InlineKeyboardButton("🔙 Orqaga", callback_data=f"BINO_{bino_id}"),
     )
+    if yopiq:
+        kb.add(types.InlineKeyboardButton("🔓 Brondan ochish", callback_data=f"XONA_OCHIQ_{xid}"))
+    else:
+        kb.add(types.InlineKeyboardButton("🔒 Brondan yopish", callback_data=f"XONA_YOPIQ_{xid}"))
+    kb.add(types.InlineKeyboardButton("🔙 Orqaga", callback_data=f"BINO_{bino_id}"))
     return kb
