@@ -129,7 +129,7 @@ MATNLAR = {
 }
 
 def t(uid, kalit, **kwargs):
-    from database import get_til
+    from db_module import get_til
     til = get_til(uid) or "uz"
     matn = MATNLAR.get(til, MATNLAR["uz"]).get(kalit, kalit)
     try:
