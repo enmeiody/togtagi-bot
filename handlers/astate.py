@@ -1,0 +1,2 @@
+# Admin holati
+astate = {}
