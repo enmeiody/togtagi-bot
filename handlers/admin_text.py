@@ -87,6 +87,8 @@ def register(bot):
         from handlers.admin import admin_menu
         state = admin_state.get(msg.from_user.id, {})
         step = state.get("step")
+        # Agar admin_state da step bo'lmasa - mijoz handleriga o'tkazish
+        if not step: return
         text = msg.text.strip()
         cid = msg.chat.id
         uid = msg.from_user.id
