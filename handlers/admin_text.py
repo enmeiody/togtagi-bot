@@ -289,16 +289,8 @@ def register(bot):
 
     # ==================== KUNLAR CALLBACK (Admin) ====================
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("kun_") and is_admin(c.from_user.id))
-    def cb_kun_admin(call):
-        if not is_admin(call.from_user.id): return
-        from handlers.admin_state import admin_state
-        from handlers.admin import admin_menu
-        uid = call.from_user.id
-        cid = call.message.chat.id
-        kunlar = int(call.data.replace("kun_", ""))
-        state = admin_state.get(uid, {})
-        step = state.get("step")
+    # kun_ callback mijoz.py da handle qilinadi
+    # Admin uchun maxsus steplar mijoz.py da tekshiriladi
 
         if step == "ax_band_kunlar":
             xid = state["ax_xid"]
@@ -350,32 +342,7 @@ def register(bot):
 
     # ==================== SANA CALLBACK (Admin) ====================
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("sana_") and is_admin(c.from_user.id))
-    def cb_sana_admin(call):
-        if not is_admin(call.from_user.id): return
-        from handlers.admin_state import admin_state
-        uid = call.from_user.id
-        cid = call.message.chat.id
-        sana = call.data.replace("sana_", "")
-        state = admin_state.get(uid, {})
-        step = state.get("step")
-
-        if step == "ax_band_sana":
-            state["ax_sana"] = sana
-            state["step"] = "ax_band_kunlar"
-            admin_state[uid] = state
-            bot.send_message(cid, f"Sana: {sana}\nNecha kun band?", reply_markup=kunlar_tugmalari())
-        elif step == "ax_bosh_sana":
-            state["ax_sana"] = sana
-            state["step"] = "ax_bosh_kunlar"
-            admin_state[uid] = state
-            bot.send_message(cid, f"Sana: {sana}\nNecha kun bosh?", reply_markup=kunlar_tugmalari())
-        elif step == "tb_sana":
-            state["ab"]["sana"] = sana
-            state["step"] = "tb_kunlar"
-            admin_state[uid] = state
-            bot.send_message(cid, f"Sana: {sana}\nNecha kun?", reply_markup=kunlar_tugmalari())
-        bot.answer_callback_query(call.id)
+    # sana_ callback mijoz.py da handle qilinadi (admin uchun ham)
 
     # ==================== TEZKOR BRON XONA ====================
 
