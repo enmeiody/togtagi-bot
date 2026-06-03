@@ -6,7 +6,7 @@ from db import (get_db, get_xonalar, get_binolar, xona_band_mi, band_qil,
                 get_bron_xonalar, tugash_sanasi, format_narx, is_admin,
                 is_director, bron_id_gen, qidir_mijoz, bugungi_stat,
                 log_stat, hozirgi_mehmonlar, bugungi_keluvchilar,
-                xonaga_joylashtir, chiqish_qil)
+                xonaga_joylashtir, chiqish_qil, xona_kun_holati, HOLAT_EMOJI)
 from config import TELEFON1, DIRECTOR_IDS
 from keyboards import (admin_kb, binolar_kb, xonalar_admin_kb, xona_detail_kb,
                        sana_kb, kunlar_kb, xonalar_kb)
@@ -499,7 +499,8 @@ def register(bot):
         rasmlar = conn.execute("SELECT COUNT(*) as c FROM xona_media WHERE xona_id=? AND tur='photo'", (xid,)).fetchone()["c"]
         conn.close()
         bugun = datetime.now().strftime("%d.%m.%Y")
-        h = "🔴 Band" if xona_band_mi(xid, bugun) else "🟢 Bosh"
+        _hol = xona_kun_holati(xid, bugun)
+        h = HOLAT_EMOJI[_hol] + " " + {"bosh":"Bosh","band":"Band","joylashgan":"Ichida","chiqish":"Chiqmoqda"}[_hol]
         yopiq = dict(x).get("yopiq", 0)
         yopiq_txt = " | 🔒 Yopiq" if yopiq else ""
         matn = (f"{x['nomi']} | {x['bino_nomi']}\n"
@@ -1388,12 +1389,12 @@ def _qabulxona_yuborish(bot, cid, uid):
         nom = x["nomi"].replace("-xona", "")
         satri = f"{nom:<5} "
         for kun in kunlar_list:
-            satri += "🔴" if xona_band_mi(x["id"], kun.strftime("%d.%m.%Y")) else "🟢"
-            satri += " "
+            h = xona_kun_holati(x["id"], kun.strftime("%d.%m.%Y"))
+            satri += HOLAT_EMOJI[h] + " "
         matn += satri + "\n"
 
     matn += "─" * 28 + "\n"
-    matn += "🟢 Bo'sh  🔴 Band\n"
+    matn += "🟢 Bosh  🔴 Band  🔵 Ichida  🟡 Bugun chiqadi\n"
     matn += " ".join(k.strftime("%d/%m") for k in kunlar_list)
 
     # Tugmalar — xonalar 2 qatorda
@@ -1431,13 +1432,13 @@ def _qabulxona_30kun(bot, cid, uid):
             nom = x["nomi"].replace("-xona", "")
             satri = f"{nom:<5} "
             for kun in kunlar_blok:
-                satri += "🔴" if xona_band_mi(x["id"], kun.strftime("%d.%m.%Y")) else "🟢"
-                satri += " "
+                h = xona_kun_holati(x["id"], kun.strftime("%d.%m.%Y"))
+                satri += HOLAT_EMOJI[h] + " "
             matn += satri + "\n"
 
         matn += "\n"
 
-    matn += "🟢 Bo'sh  🔴 Band"
+    matn += "🟢 Bosh  🔴 Band  🔵 Ichida  🟡 Bugun chiqadi"
 
     kb = types.InlineKeyboardMarkup(row_width=2)
     btns = []
