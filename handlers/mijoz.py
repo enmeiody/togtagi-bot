@@ -250,6 +250,23 @@ def register(bot):
                 bot.send_message(cid, f"Sana: {sana}\nNecha kun?", reply_markup=kunlar_kb())
                 bot.answer_callback_query(call.id)
                 return
+            elif st == "joyla_sana":
+                astate[uid]["joyla_sana"] = sana
+                astate[uid]["step"] = "joyla_kun"
+                bot.send_message(cid, f"Sana: {sana}\nNecha kun turadi?", reply_markup=kunlar_kb())
+                bot.answer_callback_query(call.id)
+                return
+            elif st == "ozg_sana":
+                bid = astate[uid]["bron_id"]
+                conn = get_db()
+                conn.execute("UPDATE bronlar SET sana=? WHERE id=?", (sana, bid))
+                conn.commit()
+                conn.close()
+                astate.pop(uid, None)
+                from keyboards import admin_kb
+                bot.send_message(cid, f"✅ Sana {sana} ga o'zgartirildi!", reply_markup=admin_kb(uid))
+                bot.answer_callback_query(call.id)
+                return
 
         # Mijoz
         st = state.get(uid, {})
