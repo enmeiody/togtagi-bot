@@ -2,7 +2,7 @@ import os
 import json
 import urllib.request
 import logging
-from database import db
+from db_module import db
 from utils import tozala_markdown
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
