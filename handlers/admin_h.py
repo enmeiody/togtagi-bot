@@ -112,30 +112,20 @@ def register(bot):
         bot.answer_callback_query(call.id, "Chiqdi!")
 
     @bot.message_handler(func=lambda m: m.text == "🏨 Qabulxona" and is_admin(m.from_user.id))
-    def h_10kun(msg):
-        bugun = datetime.now().date()
-        kunlar_list = [(bugun + timedelta(days=i)) for i in range(10)]
-        matn = "📅 10 KUNLIK XONALAR HOLATI\n"
-        matn += "─" * 32 + "\n"
-        matn += "Xona   "
-        for kun in kunlar_list:
-            matn += kun.strftime("%d") + " "
-        matn += "\n" + "─" * 32 + "\n"
-        for x in get_xonalar():
-            nom = x["nomi"].replace("-xona", "")
-            satri = f"{nom:6} "
-            for kun in kunlar_list:
-                satri += "🔴" if xona_band_mi(x["id"], kun.strftime("%d.%m.%Y")) else "🟢"
-                satri += " "
-            matn += satri + "\n"
-        matn += "─" * 32 + "\n"
-        matn += "🟢 Bosh  🔴 Band\n"
-        matn += " ".join(k.strftime("%d/%m") for k in kunlar_list)
-        kb = types.InlineKeyboardMarkup(row_width=2)
-        for x in get_xonalar():
-            h = "🔴" if xona_band_mi(x["id"], bugun.strftime("%d.%m.%Y")) else "🟢"
-            kb.add(types.InlineKeyboardButton(f"{h} {x['nomi']}", callback_data=f"AX_{x['id']}"))
-        bot.send_message(msg.chat.id, f"<pre>{matn}</pre>", parse_mode="HTML", reply_markup=kb)
+    def h_qabulxona(msg):
+        _qabulxona_yuborish(bot, msg.chat.id, msg.from_user.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data == "QABUL_30KUN")
+    def cb_qabul_30kun(call):
+        if not is_admin(call.from_user.id): return
+        _qabulxona_30kun(bot, call.message.chat.id, call.from_user.id)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data == "QABUL_10KUN")
+    def cb_qabul_10kun(call):
+        if not is_admin(call.from_user.id): return
+        _qabulxona_yuborish(bot, call.message.chat.id, call.from_user.id)
+        bot.answer_callback_query(call.id)
 
     # ===== XONAGA JOYLASH =====
 
@@ -193,13 +183,73 @@ def register(bot):
             "joyla_xnomi": x["nomi"],
             "joyla_sana": bugun  # Avtomatik bugun
         }
-        kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
-        for i in range(1, 11):
-            kb.add(str(i))
-        kb.add("🔙 Admin menyu")
+        # Inline keyboard - raqamlarni bosish orqali
+        kb = types.InlineKeyboardMarkup(row_width=5)
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"JOYLA_KISHI_{xid}_{i}") for i in range(1, 11)]
+        kb.add(*btns)
         xnomi_str = x["nomi"]
         joyla_matn = "Xona: " + xnomi_str + " | Bugun: " + bugun + "\n\nNechta kishi?"
         bot.send_message(call.message.chat.id, joyla_matn, reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("JOYLA_KISHI_"))
+    def cb_joyla_kishi(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        parts = call.data.split("_")
+        xid = int(parts[2])
+        n = int(parts[3])
+        bugun = datetime.now().strftime("%d.%m.%Y")
+        conn = get_db()
+        x = conn.execute("SELECT * FROM xonalar WHERE id=?", (xid,)).fetchone()
+        conn.close()
+        astate[call.from_user.id] = {
+            "step": "joyla_kun",
+            "joyla_xid": xid,
+            "joyla_xnomi": x["nomi"],
+            "joyla_sana": bugun,
+            "joyla_kishi": n
+        }
+        kb = types.InlineKeyboardMarkup(row_width=5)
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"JOYLA_KUN_{xid}_{i}") for i in range(1, 16)]
+        kb.add(*btns)
+        bot.edit_message_text(
+            "Xona: " + x["nomi"] + " | " + str(n) + " kishi\nNecha kun turadi?",
+            call.message.chat.id, call.message.message_id, reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("JOYLA_KUN_"))
+    def cb_joyla_kun(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        parts = call.data.split("_")
+        xid = int(parts[2])
+        kunlar = int(parts[3])
+        st = astate.get(call.from_user.id, {})
+        astate[call.from_user.id]["joyla_kunlar"] = kunlar
+        astate[call.from_user.id]["step"] = "joyla_ism"
+        sana = st.get("joyla_sana", datetime.now().strftime("%d.%m.%Y"))
+        tugash = tugash_sanasi(sana, kunlar)
+        # Bron tekshirish
+        ogoh = ""
+        from datetime import timedelta as td2
+        conn = get_db()
+        bosh_dt = datetime.strptime(sana, "%d.%m.%Y").date()
+        for i in range(1, kunlar + 1):
+            kun = (bosh_dt + td2(days=i)).strftime("%d.%m.%Y")
+            row = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?", (xid, kun)).fetchone()
+            if row and row["bron_id"]:
+                b2 = conn.execute("SELECT ism FROM bronlar WHERE id=?", (row["bron_id"],)).fetchone()
+                if b2:
+                    ogoh += "  " + kun + " — #" + row["bron_id"] + " " + (b2["ism"] or "") + "\n"
+        conn.close()
+        kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.add("🔙 Admin menyu")
+        info = sana + " - " + tugash + " | " + str(kunlar) + " kun"
+        if ogoh:
+            info += "\n\nDiqqat! Keyingi kunlarda bron bor:\n" + ogoh
+        info += "\n\nMijoz ismi:"
+        bot.send_message(call.message.chat.id, info, reply_markup=kb)
         bot.answer_callback_query(call.id)
 
     # Bronlar bo'limidan joylash
@@ -1200,3 +1250,101 @@ def admin_matn_handler(bot, msg, uid, text, astate):
         except:
             bot.send_message(cid, "Raqam kiriting")
         return
+
+
+def _qabulxona_yuborish(bot, cid, uid):
+    """10 kunlik Qabulxona — chiroyli dizayn"""
+    bugun = datetime.now().date()
+    kunlar_list = [(bugun + timedelta(days=i)) for i in range(10)]
+    mehmonlar = hozirgi_mehmonlar()
+    keluvchilar = bugungi_keluvchilar()
+
+    # Yuqori qism — bugungi holat
+    matn = "🏨 QABULXONA\n"
+    matn += "━" * 28 + "\n\n"
+
+    # Bugungi mehmonlar
+    matn += f"👥 Hozir: {len(mehmonlar)} xona band"
+    if mehmonlar:
+        ketuvchilar = [m for m in mehmonlar if m["tugash"] == bugun.strftime("%d.%m.%Y")]
+        if ketuvchilar:
+            matn += f" | {len(ketuvchilar)} ta bugun ketadi"
+    matn += "\n"
+    matn += f"📋 Bugun keluvchi: {len(keluvchilar)} bron\n\n"
+
+    # 10 kunlik jadval
+    matn += "📅 10 KUNLIK HOLAT\n"
+    matn += "─" * 28 + "\n"
+
+    # Sanalar qatori
+    matn += "Xona  "
+    for kun in kunlar_list:
+        matn += kun.strftime("%d").rjust(2) + " "
+    matn += "\n" + "─" * 28 + "\n"
+
+    for x in get_xonalar():
+        nom = x["nomi"].replace("-xona", "")
+        satri = f"{nom:<5} "
+        for kun in kunlar_list:
+            satri += "🔴" if xona_band_mi(x["id"], kun.strftime("%d.%m.%Y")) else "🟢"
+            satri += " "
+        matn += satri + "\n"
+
+    matn += "─" * 28 + "\n"
+    matn += "🟢 Bo'sh  🔴 Band\n"
+    matn += " ".join(k.strftime("%d/%m") for k in kunlar_list)
+
+    # Tugmalar — xonalar 2 qatorda
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    btns = []
+    for x in get_xonalar():
+        h = "🔴" if xona_band_mi(x["id"], bugun.strftime("%d.%m.%Y")) else "🟢"
+        btns.append(types.InlineKeyboardButton(
+            f"{h} {x['nomi']}",
+            callback_data=f"AX_{x['id']}"))
+    kb.add(*btns)
+    kb.add(types.InlineKeyboardButton("📅 30 kunlikni ko'rish", callback_data="QABUL_30KUN"))
+
+    bot.send_message(cid, f"<pre>{matn}</pre>", parse_mode="HTML", reply_markup=kb)
+
+
+def _qabulxona_30kun(bot, cid, uid):
+    """30 kunlik holat"""
+    bugun = datetime.now().date()
+    kunlar_list = [(bugun + timedelta(days=i)) for i in range(30)]
+
+    matn = "📅 30 KUNLIK XONALAR HOLATI\n"
+    matn += "━" * 30 + "\n\n"
+
+    # 10 kunlik bloklar
+    for blok in range(3):
+        bosh = blok * 10
+        oxir = bosh + 10
+        kunlar_blok = kunlar_list[bosh:oxir]
+
+        matn += "Xona  " + " ".join(k.strftime("%d") for k in kunlar_blok) + "\n"
+        matn += "─" * 28 + "\n"
+
+        for x in get_xonalar():
+            nom = x["nomi"].replace("-xona", "")
+            satri = f"{nom:<5} "
+            for kun in kunlar_blok:
+                satri += "🔴" if xona_band_mi(x["id"], kun.strftime("%d.%m.%Y")) else "🟢"
+                satri += " "
+            matn += satri + "\n"
+
+        matn += "\n"
+
+    matn += "🟢 Bo'sh  🔴 Band"
+
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    btns = []
+    for x in get_xonalar():
+        h = "🔴" if xona_band_mi(x["id"], bugun.strftime("%d.%m.%Y")) else "🟢"
+        btns.append(types.InlineKeyboardButton(
+            f"{h} {x['nomi']}",
+            callback_data=f"AX_{x['id']}"))
+    kb.add(*btns)
+    kb.add(types.InlineKeyboardButton("🔙 10 kunlik", callback_data="QABUL_10KUN"))
+
+    bot.send_message(cid, f"<pre>{matn}</pre>", parse_mode="HTML", reply_markup=kb)
