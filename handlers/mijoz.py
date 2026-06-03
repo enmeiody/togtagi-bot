@@ -602,11 +602,11 @@ def register(bot):
 
         # Admin tugmalarini o'tkazib yuborish
         ADMIN_BTNLAR = [
-            "🏨 Xonalar", "📋 Bronlar", "📊 Bugungi holat", "👥 Mehmonlar",
-            "📅 10 kunlik", "👤 Mijoz qidirish", "➕ Tezkor bron", "📸 Galereya",
-            "📄 Hisobot", "🤖 AI malumot", "🔙 Asosiy menyu", "👮 Adminlar",
-            "📊 Statistika", "🔙 Admin menyu", "🏠 Xonaga joylash",
-            "🔗 Ijtimoiy tarmoqlar sozlash"
+            "🏨 Qabulxona", "🏢 Xonalar", "📋 Bronlar", "📊 Bugungi holat",
+            "👥 Mehmonlar", "🏠 Xonaga joylash", "👤 Mijoz qidirish",
+            "➕ Tezkor bron", "📸 Galereya", "📄 Hisobot",
+            "🤖 AI malumot", "🔙 Asosiy menyu", "👮 Adminlar",
+            "📊 Statistika", "🔙 Admin menyu", "🔗 Ijtimoiy tarmoqlar"
         ]
         if is_admin(uid) and text in ADMIN_BTNLAR:
             return
