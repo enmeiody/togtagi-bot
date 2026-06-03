@@ -9,6 +9,18 @@ def asosiy_kb(uid):
     m = M[til]
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(m["bron"], m["bosh_x"], m["galereya"], m["xizmatlar"], m["manzil"], m["bronlarim"])
+    kb.add("🌐 Ijtimoiy tarmoqlar")
+    return kb
+
+
+def ijtimoiy_kb():
+    from db import get_ijtimoiy
+    ijt = get_ijtimoiy()
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    icons = {"telegram": "📱 Telegram", "instagram": "📸 Instagram", "youtube": "🎬 YouTube"}
+    for kalit, info in ijt.items():
+        if info["link"]:
+            kb.add(types.InlineKeyboardButton(icons.get(kalit, kalit), url=info["link"]))
     return kb
 
 
