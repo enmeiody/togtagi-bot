@@ -309,7 +309,7 @@ def register(bot):
     @bot.callback_query_handler(func=lambda c: c.data.startswith("kun_"))
     def cb_kun_mijoz(call):
         from handlers.admin_state import admin_state
-        from db_module import band_qil, bosh_qil_sana, format_narx
+        from db_module import band_qil, bosh_qil_sana
         uid = call.from_user.id
         cid = call.message.chat.id
         kunlar = int(call.data.replace("kun_", ""))
@@ -361,9 +361,6 @@ def register(bot):
                 bot.send_message(cid, matn_tb, reply_markup=kb)
                 bot.answer_callback_query(call.id)
                 return
-        uid = call.from_user.id
-        cid = call.message.chat.id
-        kunlar = int(call.data.replace("kun_", ""))
         state = user_state.get(uid, {})
         state["kunlar"] = kunlar
         state["step"] = "xona_tanlash"
