@@ -148,6 +148,20 @@ def init_db():
                 xonalar)
         conn.commit()
 
+    # Migration - eski bazaga yangi ustunlar qo'shish
+    try:
+        conn.execute("ALTER TABLE mijozlar ADD COLUMN last_active TEXT")
+        conn.commit()
+    except: pass
+    try:
+        conn.execute("ALTER TABLE mijozlar ADD COLUMN til TEXT DEFAULT 'uz'")
+        conn.commit()
+    except: pass
+    try:
+        conn.execute("ALTER TABLE bronlar ADD COLUMN izoh TEXT")
+        conn.commit()
+    except: pass
+
 # ==================== XONA FUNKSIYALAR ====================
 
 def get_xonalar(bino_id=None, aktiv=True):
