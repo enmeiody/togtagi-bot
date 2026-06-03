@@ -308,13 +308,21 @@ def register(bot):
             elif st == "bosh_kun":
                 xid = astate[uid]["xid"]
                 sana = astate[uid]["sana"]
-                bosh_qil_sana(xid, sana, kunlar)
+                bron_bor = bosh_qil_sana(xid, sana, kunlar)
                 conn = gdb()
                 xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
                 conn.close()
                 astate.pop(uid, None)
                 from keyboards import admin_kb
-                bot.send_message(cid, f"{xnomi} - {sana} dan {kunlar} kun BOSH", reply_markup=admin_kb(uid))
+                if bron_bor:
+                    # Bron bor sanalar haqida ogohlantirish
+                    ogoh = f"⚠️ {xnomi} da quyidagi sanalar bronli — o'chirilmadi:\n"
+                    for s, bid in bron_bor:
+                        ogoh += f"  📅 {s} — Bron #{bid}\n"
+                    ogoh += "\nBronni bekor qilish uchun Bronlar bo'limiga kiring."
+                    bot.send_message(cid, ogoh, reply_markup=admin_kb(uid))
+                else:
+                    bot.send_message(cid, f"✅ {xnomi} — {sana} dan {kunlar} kun BOSH qilindi", reply_markup=admin_kb(uid))
                 bot.answer_callback_query(call.id)
                 return
             elif st == "tb_kun":
@@ -430,7 +438,12 @@ def register(bot):
     def cb_xt(call):
         uid = call.from_user.id
         cid = call.message.chat.id
-        parts = call.data.split("_")
+
+        # _kech holatini tekshirish
+        kech = call.data.endswith("_kech")
+        data = call.data.replace("_kech", "") if kech else call.data
+
+        parts = data.split("_")
         kunlar = int(parts[-1])
         sana = parts[-2]
         xid_list = [int(x) for x in parts[1:-2]]
@@ -474,6 +487,11 @@ def register(bot):
                     bot.send_media_group(cid, media)
                 except:
                     pass
+
+        if kech:
+            bot.send_message(cid,
+                f"ℹ️ Eslatma: Bu xonada bugun soat 12:00 gacha avvalgi mehmon bor.\n"
+                f"Xona 13:00 dan boshlab tayyor bo'ladi.")
 
         if kishi > jami_sigim:
             bot.send_message(cid, f"Eslatma: {jami_sigim} joy bor, siz {kishi} kishisiz. {kishi-jami_sigim} kishi qoshimcha joy kerak.")
