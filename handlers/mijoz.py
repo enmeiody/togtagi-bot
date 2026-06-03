@@ -253,7 +253,7 @@ def register(bot):
             elif st == "joyla_sana":
                 astate[uid]["joyla_sana"] = sana
                 astate[uid]["step"] = "joyla_kun"
-                bot.send_message(cid, f"Sana: {sana}\nNecha kun turadi?", reply_markup=kunlar_kb())
+                bot.send_message(cid, "Sana: " + sana + "\nNecha kun turadi?", reply_markup=kunlar_kb())
                 bot.answer_callback_query(call.id)
                 return
             elif st == "ozg_sana":
