@@ -459,7 +459,7 @@ def register(bot):
         conn.close()
         bugun = datetime.now().strftime("%d.%m.%Y")
         h = "🔴 Band" if xona_band_mi(xid, bugun) else "🟢 Bosh"
-        yopiq = x.get("yopiq", 0)
+        yopiq = dict(x).get("yopiq", 0)
         yopiq_txt = " | 🔒 Yopiq" if yopiq else ""
         matn = (f"{x['nomi']} | {x['bino_nomi']}\n"
                 f"Qavat: {x['qavat']} | Joy: {x['sigim']}👤\n"
