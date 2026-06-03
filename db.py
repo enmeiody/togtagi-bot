@@ -229,6 +229,54 @@ def xona_kunlar_band(xid, bosh_sana, kunlar):
     return False
 
 
+def xona_kun_holati(xid, sana):
+    """Xonaning berilgan kundagi holati:
+    'bosh'      -> 🟢
+    'band'      -> 🔴 (bron bor, hali kelmagan)
+    'joylashgan'-> 🔵 (hozir ichida)
+    'chiqish'   -> 🟡 (bugun tugash sanasi)
+    """
+    conn = get_db()
+    bugun = datetime.now().strftime("%d.%m.%Y")
+
+    # Joylashgan (hozir ichida)?
+    joy = conn.execute(
+        "SELECT * FROM joylashgan WHERE xona_id=? AND sana<=? AND tugash>=? AND holat='joylashgan'",
+        (xid, sana, sana)).fetchone()
+    if joy:
+        # Tugash sanasi = shu sana bo'lsa sariq
+        if joy["tugash"] == sana:
+            conn.close()
+            return "chiqish"
+        conn.close()
+        return "joylashgan"
+
+    # Band (bron bor)?
+    row = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?", (xid, sana)).fetchone()
+    if row and row["bron_id"]:
+        bid = row["bron_id"]
+        # Tugash sanasi = shu sana bo'lsa sariq
+        b = conn.execute("SELECT * FROM bronlar WHERE id=?", (bid,)).fetchone()
+        conn.close()
+        if b:
+            from datetime import timedelta
+            tugash = (datetime.strptime(b["sana"], "%d.%m.%Y") + timedelta(days=b["kunlar"])).strftime("%d.%m.%Y")
+            if tugash == sana:
+                return "chiqish"
+        return "band"
+
+    conn.close()
+    return "bosh"
+
+
+HOLAT_EMOJI = {
+    "bosh":       "🟢",
+    "band":       "🔴",
+    "joylashgan": "🔵",
+    "chiqish":    "🟡",
+}
+
+
 def xona_bugun_boshadimi(xid, sana):
     """Xona shu sanada band, lekin avvalgi bron tugash sanasi = shu sana bo'lsa True"""
     conn = get_db()
