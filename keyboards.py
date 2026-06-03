@@ -1,6 +1,6 @@
 from telebot import types
 from config import M, TELEFON1, TELEFON2, INSTAGRAM
-from db import get_til, format_narx, tugash_sanasi, get_xonalar, xona_band_mi, xona_kunlar_band
+from db import get_til, format_narx, tugash_sanasi, get_xonalar, xona_band_mi, xona_kunlar_band, xona_bugun_boshadimi
 from datetime import datetime, timedelta
 
 
@@ -75,11 +75,20 @@ def xonalar_kb(sana, kunlar, kishi=1):
     kb = types.InlineKeyboardMarkup(row_width=1)
     xonalar = get_xonalar()
     for x in xonalar:
-        if xona_kunlar_band(x["id"], sana, kunlar):
-            continue
         if dict(x).get("yopiq", 0):
             continue
         if x["sigim"] < kishi - 1:
+            continue
+        # To'liq band
+        if xona_kunlar_band(x["id"], sana, kunlar):
+            # Faqat birinchi kun band bo'lib, tugash sanasi = tanlangan sana bo'lsa ko'rsat
+            if kunlar == 1 or xona_bugun_boshadimi(x["id"], sana):
+                mos = "✅" if x["sigim"] >= kishi else "⚠️"
+                qavat = "🏠" if x["qavat"] == 1 else "🏢"
+                narx = format_narx(x["narx"] * kunlar)
+                kb.add(types.InlineKeyboardButton(
+                    f"🕐{qavat} {x['nomi']} | {x['sigim']}👤 | {narx} (13:00 dan)",
+                    callback_data=f"XT_{x['id']}_{sana}_{kunlar}_kech"))
             continue
         mos = "✅" if x["sigim"] >= kishi else "⚠️"
         qavat = "🏠" if x["qavat"] == 1 else "🏢"
@@ -101,12 +110,14 @@ def binolar_kb():
 def xonalar_admin_kb(bino_id):
     kb = types.InlineKeyboardMarkup(row_width=2)
     bugun = datetime.now().strftime("%d.%m.%Y")
+    btns = []
     for x in get_xonalar(bino_id):
         h = "🔴" if xona_band_mi(x["id"], bugun) else "🟢"
         yopiq = "🔒" if dict(x).get("yopiq", 0) else ""
-        kb.add(types.InlineKeyboardButton(
-            f"{h}{yopiq} {x['nomi']} ({x['sigim']}👤)",
+        btns.append(types.InlineKeyboardButton(
+            f"{h}{yopiq} {x['nomi']}({x['sigim']}👤)",
             callback_data=f"AX_{x['id']}"))
+    kb.add(*btns)
     return kb
 
 
