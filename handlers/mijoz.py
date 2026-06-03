@@ -261,11 +261,39 @@ def register(bot):
 
     # ==================== SANA VA KUN CALLBACK ====================
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("sana_") and not is_admin(c.from_user.id))
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("sana_"))
     def cb_sana_mijoz(call):
+        from handlers.admin_state import admin_state
         uid = call.from_user.id
         cid = call.message.chat.id
         sana = call.data.replace("sana_", "")
+
+        # Admin uchun maxsus steplar
+        if is_admin(uid):
+            a_state = admin_state.get(uid, {})
+            step = a_state.get("step")
+            if step == "ax_band_sana":
+                a_state["ax_sana"] = sana
+                a_state["step"] = "ax_band_kunlar"
+                admin_state[uid] = a_state
+                bot.send_message(cid, f"Sana: {sana}\nNecha kun band?", reply_markup=kunlar_tugmalari())
+                bot.answer_callback_query(call.id)
+                return
+            elif step == "ax_bosh_sana":
+                a_state["ax_sana"] = sana
+                a_state["step"] = "ax_bosh_kunlar"
+                admin_state[uid] = a_state
+                bot.send_message(cid, f"Sana: {sana}\nNecha kun bosh?", reply_markup=kunlar_tugmalari())
+                bot.answer_callback_query(call.id)
+                return
+            elif step == "tb_sana":
+                a_state["ab"]["sana"] = sana
+                a_state["step"] = "tb_kunlar"
+                admin_state[uid] = a_state
+                bot.send_message(cid, f"Sana: {sana}\nNecha kun?", reply_markup=kunlar_tugmalari())
+                bot.answer_callback_query(call.id)
+                return
+
         state = user_state.get(uid, {})
 
         state["sana"] = sana
@@ -278,8 +306,61 @@ def register(bot):
             reply_markup=kunlar_tugmalari())
         bot.answer_callback_query(call.id)
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("kun_") and not is_admin(c.from_user.id))
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("kun_"))
     def cb_kun_mijoz(call):
+        from handlers.admin_state import admin_state
+        from database import band_qil, bosh_qil_sana, format_narx
+        uid = call.from_user.id
+        cid = call.message.chat.id
+        kunlar = int(call.data.replace("kun_", ""))
+
+        # Admin uchun maxsus steplar
+        if is_admin(uid):
+            a_state = admin_state.get(uid, {})
+            step = a_state.get("step")
+            if step == "ax_band_kunlar":
+                xid = a_state["ax_xid"]
+                sana = a_state["ax_sana"]
+                band_qil(xid, sana, kunlar, "admin")
+                admin_state.pop(uid, None)
+                with db() as conn:
+                    x = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()
+                from handlers.admin import admin_menu
+                bot.send_message(cid, f"{x['nomi']} - {sana} dan {kunlar} kun BAND qilindi", reply_markup=admin_menu(uid))
+                bot.answer_callback_query(call.id)
+                return
+            elif step == "ax_bosh_kunlar":
+                xid = a_state["ax_xid"]
+                sana = a_state["ax_sana"]
+                bosh_qil_sana(xid, sana, kunlar)
+                admin_state.pop(uid, None)
+                with db() as conn:
+                    x = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()
+                from handlers.admin import admin_menu
+                bot.send_message(cid, f"{x['nomi']} - {sana} dan {kunlar} kun BOSH qilindi", reply_markup=admin_menu(uid))
+                bot.answer_callback_query(call.id)
+                return
+            elif step == "tb_kunlar":
+                a_state["ab"]["kunlar"] = kunlar
+                a_state["step"] = "tb_xona"
+                admin_state[uid] = a_state
+                sana = a_state["ab"]["sana"]
+                kishi = a_state["ab"].get("kishi", 1)
+                kombinatsiyalar = mos_kombinatsiya(kishi, "oila", sana, kunlar)
+                tugash = tugash_sanasi(sana, kunlar)
+                from telebot import types as tb_types
+                kb = tb_types.InlineKeyboardMarkup(row_width=1)
+                if kombinatsiyalar:
+                    for x in kombinatsiyalar[0]["xonalar"]:
+                        narx = format_narx(x["narx"] * kunlar)
+                        kb.add(tb_types.InlineKeyboardButton(
+                            f"{x['nomi']} | {x['sigim']} kishi | {narx} so'm",
+                            callback_data=f"tb_xona_{x['id']}"))
+                kb.add(tb_types.InlineKeyboardButton("Barcha bosh xonalar", callback_data="tb_barchasi"))
+                matn_tb = f"Sana: {sana}-{tugash} | {kunlar} kun\nXonani tanlang:"
+                bot.send_message(cid, matn_tb, reply_markup=kb)
+                bot.answer_callback_query(call.id)
+                return
         uid = call.from_user.id
         cid = call.message.chat.id
         kunlar = int(call.data.replace("kun_", ""))
@@ -337,7 +418,7 @@ def register(bot):
         bot.edit_message_text(matn, cid, call.message.message_id, reply_markup=kb)
         bot.answer_callback_query(call.id)
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("barcha_") and not is_admin(c.from_user.id))
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("barcha_"))
     def cb_barcha(call):
         uid = call.from_user.id
         parts = call.data.split("_")
@@ -349,7 +430,7 @@ def register(bot):
             reply_markup=kb)
         bot.answer_callback_query(call.id)
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("xona_tanla_") and not is_admin(c.from_user.id))
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("xona_tanla_"))
     def cb_xona_tanla(call):
         uid = call.from_user.id
         cid = call.message.chat.id
