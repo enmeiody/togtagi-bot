@@ -14,7 +14,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-from database import init_db
+from db_module import init_db
 init_db()
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
@@ -43,7 +43,7 @@ def eslatmalar():
             # 11:00 - vaqt tugayapti eslatmasi
             if hozir.hour == 11 and hozir.minute == 0:
                 bugun = hozir.strftime("%d.%m.%Y")
-                from database import db, format_narx
+                from db_module import db, format_narx
                 with db() as conn:
                     bronlar = conn.execute(
                         "SELECT * FROM bronlar WHERE holat='tasdiqlangan'").fetchall()
@@ -63,7 +63,7 @@ def eslatmalar():
             # 11:00 - 1 kun qolgan eslatma (adminlarga ham)
             if hozir.hour == 11 and hozir.minute == 0:
                 ertaga = (hozir + timedelta(days=1)).strftime("%d.%m.%Y")
-                from database import db
+                from db_module import db
                 with db() as conn:
                     bronlar = conn.execute(
                         "SELECT * FROM bronlar WHERE sana=? AND holat='tasdiqlangan'",
@@ -81,7 +81,7 @@ def eslatmalar():
                                 f"Savollar: {TELEFON1}")
                         except: pass
                     # Adminlarga eslatma
-                    from database import format_narx
+                    from db_module import format_narx
                     tugash = (datetime.strptime(b["sana"], "%d.%m.%Y") + timedelta(days=b["kunlar"])).strftime("%d.%m.%Y")
                     for aid in DIRECTOR_IDS:
                         try:
@@ -95,7 +95,7 @@ def eslatmalar():
 
             # 20:00 - kunlik hisobot
             if hozir.hour == 20 and hozir.minute == 0:
-                from database import bugungi_statistika
+                from db_module import bugungi_statistika
                 stat = bugungi_statistika()
                 bugun = hozir.strftime("%d.%m.%Y")
                 matn = (f"Kunlik hisobot ({bugun}):\n\n"
