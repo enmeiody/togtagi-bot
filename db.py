@@ -158,6 +158,17 @@ def init_db():
 
     conn.execute("UPDATE xonalar SET bino_id=1 WHERE bino_id IS NULL")
 
+    # joylashgan jadval migration
+    for sql in [
+        "ALTER TABLE joylashgan ADD COLUMN xona_nomi TEXT",
+        "ALTER TABLE joylashgan ADD COLUMN sana TEXT",
+        "ALTER TABLE joylashgan ADD COLUMN tugash TEXT",
+        "ALTER TABLE joylashgan ADD COLUMN holat TEXT DEFAULT 'joylashgan'",
+    ]:
+        try:
+            conn.execute(sql)
+        except: pass
+
     for kalit, nomi in [("telegram","Telegram"),("instagram","Instagram"),("youtube","YouTube")]:
         try:
             conn.execute("INSERT OR IGNORE INTO ijtimoiy (kalit,link,nomi) VALUES (?,?,?)", (kalit,"",nomi))
