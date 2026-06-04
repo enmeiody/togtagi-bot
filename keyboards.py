@@ -29,15 +29,24 @@ def admin_kb(uid=None):
     kb.add(
         "🏨 Qabulxona", "🏠 Xonaga joylash",
         "📊 Bugungi holat", "👥 Mehmonlar",
-        "🏢 Xonalar", "📋 Bronlar",
-        "👤 Mijoz qidirish", "➕ Tezkor bron",
-        "📸 Galereya", "📄 Hisobot",
-        "🤖 AI malumot", "🔗 Ijtimoiy tarmoqlar",
+        "📋 Bronlar", "👤 Mijoz qidirish",
+        "➕ Tezkor bron", "⚙️ Sozlamalar",
         "🔙 Asosiy menyu"
+    )
+    return kb
+
+
+def sozlamalar_kb(uid=None):
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.add(
+        "🏢 Xonalar", "📸 Galereya",
+        "📄 Hisobot", "🤖 AI malumot",
+        "🔗 Ijtimoiy tarmoqlar", "👥 Mijozlar ro'yxati",
     )
     from db import is_director
     if uid and is_director(uid):
         kb.add("👮 Adminlar", "📊 Statistika")
+    kb.add("🔙 Admin menyu")
     return kb
 
 
