@@ -734,39 +734,45 @@ def kengaytirilgan_stat():
 
 # ===== KOMBINATSIYA =====
 def barcha_variantlar(kishi, guruh, sana, kunlar=1):
+    """Berilgan kishi soni uchun xona variantlari.
+    Chiqish-kuni mantig'i bilan (xona_bosh_mi_oraliq).
+    Variantlar: bitta to'liq mos, kombinatsiyalar, va ortiqcha (1 xonaga ko'p kishi)."""
     xonalar = get_xonalar()
     bosh = []
     for x in xonalar:
         xd = dict(x)
-        if not xona_kunlar_band(xd["id"], sana, kunlar) and xd.get("yopiq", 0) == 0:
+        if xd.get("yopiq", 0):
+            continue
+        ok, _ = xona_bosh_mi_oraliq(xd["id"], sana, kunlar)
+        if ok:
             bosh.append(xd)
     if not bosh:
         return []
 
     afzal_qavat = 1 if guruh == "oila" else 2
     variantlar = []
+    korilgan = set()  # takror oldini olish (xona id lar to'plami)
 
-    # 1. Bitta xona - to'liq mos
+    def kalit(xlist):
+        return tuple(sorted(x["id"] for x in xlist))
+
+    # 1. Bitta xona - to'liq mos (eng kichik mosi)
     for x in sorted(bosh, key=lambda a: a["sigim"]):
         if x["sigim"] >= kishi:
-            variantlar.append({"xonalar": [x], "tur": "bitta",
-                               "jami_sigim": x["sigim"], "ortiqcha": x["sigim"] - kishi})
+            k = kalit([x])
+            if k not in korilgan:
+                korilgan.add(k)
+                variantlar.append({"xonalar": [x], "tur": "bitta",
+                                   "jami_sigim": x["sigim"], "ortiqcha": x["sigim"] - kishi})
             break
 
-    # 2. Bitta xona - 1 ta ortiqcha
-    for x in sorted(bosh, key=lambda a: a["sigim"]):
-        if x["sigim"] == kishi - 1:
-            variantlar.append({"xonalar": [x], "tur": "ortiqcha_1",
-                               "jami_sigim": x["sigim"], "ortiqcha": -1})
-            break
-
-    # 3. Kombinatsiya
+    # 2. Kombinatsiyalar (2-3 xona) - turli yondashuvlar
     def topish(kishi_qolgan, mavjud, tanlangan):
         if kishi_qolgan <= 0:
             return tanlangan
         if not mavjud:
             return None
-        for i, x in enumerate(mavjud):
+        for x in mavjud:
             if x["sigim"] >= kishi_qolgan:
                 return tanlangan + [x]
         x = mavjud[0]
@@ -777,23 +783,49 @@ def barcha_variantlar(kishi, guruh, sana, kunlar=1):
 
     afzal = sorted([x for x in bosh if x["qavat"] == afzal_qavat], key=lambda a: a["sigim"], reverse=True)
     boshqa = sorted([x for x in bosh if x["qavat"] != afzal_qavat], key=lambda a: a["sigim"], reverse=True)
+    kichikdan = sorted(bosh, key=lambda a: a["sigim"])  # kichik xonalardan yig'ish
 
-    kom1 = topish(kishi, afzal + boshqa, [])
-    if kom1 and len(kom1) > 1:
-        jami = sum(x["sigim"] for x in kom1)
-        variantlar.append({"xonalar": kom1, "tur": "kombinatsiya",
-                           "jami_sigim": jami, "ortiqcha": jami - kishi})
+    # Kichik xonalardan kombinatsiya (masalan 4 kishi -> 3+3)
+    def topish_kichik(kishi_qolgan, mavjud, tanlangan):
+        if kishi_qolgan <= 0:
+            return tanlangan
+        if not mavjud:
+            return None
+        x = mavjud[0]
+        n = topish_kichik(kishi_qolgan - x["sigim"], mavjud[1:], tanlangan + [x])
+        if n:
+            return n
+        return topish_kichik(kishi_qolgan, mavjud[1:], tanlangan)
 
-    kom2 = topish(kishi, boshqa + afzal, [])
-    if kom2 and len(kom2) > 1:
-        ids1 = set(x["id"] for x in (kom1 or []))
-        ids2 = set(x["id"] for x in kom2)
-        if ids1 != ids2:
-            jami = sum(x["sigim"] for x in kom2)
-            variantlar.append({"xonalar": kom2, "tur": "kombinatsiya_2",
-                               "jami_sigim": jami, "ortiqcha": jami - kishi})
+    for tartib, fn in [(afzal + boshqa, topish), (boshqa + afzal, topish),
+                       (kichikdan, topish_kichik)]:
+        kom = fn(kishi, tartib, [])
+        if kom and len(kom) > 1:
+            k = kalit(kom)
+            if k not in korilgan:
+                korilgan.add(k)
+                jami = sum(x["sigim"] for x in kom)
+                variantlar.append({"xonalar": kom, "tur": "kombinatsiya",
+                                   "jami_sigim": jami, "ortiqcha": jami - kishi})
 
-    return variantlar[:4]
+    # Variantlarni tartiblash: kam ortiqcha joy birinchi, kam xona birinchi
+    variantlar.sort(key=lambda v: (len(v["xonalar"]), abs(v["ortiqcha"])))
+    return variantlar[:6]
+
+
+def bosh_xonalar_royxat(sana, kunlar=1):
+    """Berilgan oraliqda bo'sh (yoki chiqadigan) barcha xonalar - admin qo'lda tanlashi uchun"""
+    xonalar = get_xonalar()
+    natija = []
+    for x in xonalar:
+        xd = dict(x)
+        if xd.get("yopiq", 0):
+            continue
+        ok, _ = xona_bosh_mi_oraliq(xd["id"], sana, kunlar)
+        if ok:
+            natija.append(xd)
+    return natija
+
 
 def mos_kombinatsiya(kishi, guruh, sana, kunlar=1):
     v = barcha_variantlar(kishi, guruh, sana, kunlar)
