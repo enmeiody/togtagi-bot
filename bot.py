@@ -3,7 +3,9 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta
+import pytz
 import telebot
+from config import TZ
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 if not BOT_TOKEN:
@@ -39,7 +41,7 @@ def eslatmalar():
 
     while True:
         try:
-            hozir = datetime.now()
+            hozir = datetime.now(TZ)
             soat_min = (hozir.hour, hozir.minute)
             bugun = hozir.strftime("%d.%m.%Y")
             ertaga = (hozir + timedelta(days=1)).strftime("%d.%m.%Y")
