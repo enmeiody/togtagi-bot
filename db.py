@@ -1,6 +1,9 @@
 import sqlite3
 import os
 from datetime import datetime, timedelta
+import pytz
+
+TZ = pytz.timezone('Asia/Tashkent')
 import random
 import string
 
@@ -237,7 +240,7 @@ def xona_kun_holati(xid, sana):
     'chiqish'   -> 🟡 (bugun tugash sanasi)
     """
     conn = get_db()
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
 
     # Joylashgan (hozir ichida)?
     joy = conn.execute(
@@ -384,7 +387,7 @@ def chiqish_qil(joylashgan_id):
     conn.close()
 
 def hozirgi_mehmonlar():
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
     conn = get_db()
     rows = conn.execute(
         "SELECT * FROM joylashgan WHERE holat='joylashgan' AND tugash >= ?",
@@ -393,7 +396,7 @@ def hozirgi_mehmonlar():
     return rows
 
 def bugungi_keluvchilar():
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
     conn = get_db()
     rows = conn.execute(
         "SELECT * FROM bronlar WHERE sana=? AND holat='tasdiqlangan'",
@@ -492,7 +495,7 @@ def log_stat(user_id, harakat, qoshimcha=""):
     except: pass
 
 def bugungi_stat():
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
     conn = get_db()
     f = conn.execute("SELECT COUNT(DISTINCT user_id) as c FROM statistika WHERE vaqt LIKE ?", (f"{bugun}%",)).fetchone()["c"]
     h = conn.execute("SELECT harakat, COUNT(*) as c FROM statistika WHERE vaqt LIKE ? GROUP BY harakat ORDER BY c DESC LIMIT 8", (f"{bugun}%",)).fetchall()
@@ -501,7 +504,7 @@ def bugungi_stat():
     return {"foydalanuvchilar": f, "harakatlar": h, "bronlar": b}
 
 def kengaytirilgan_stat():
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
     hafta = (datetime.now() - timedelta(days=7)).strftime("%d.%m.%Y")
     oy = datetime.now().strftime("%d.%m.")
     conn = get_db()
