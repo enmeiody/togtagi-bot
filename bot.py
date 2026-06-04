@@ -126,28 +126,31 @@ def eslatmalar():
                                     f"{b['ism']} | {b['telefon']}\n{b['kishi']} kishi")
                             except: pass
 
-            # 12:15 - avtomatik chiqish
+            # 12:15 - avtomatik chiqish (bugun tugaydigan barcha mehmonlar)
             if soat_min == (12, 15) and yuborilgan.get(f"1215_{bugun}") != True:
                 yuborilgan[f"1215_{bugun}"] = True
+                from db import guruh_chiqar
                 conn = get_db()
-                bronlar = conn.execute("SELECT * FROM bronlar WHERE holat IN ('tasdiqlangan','joylashgan')").fetchall()
+                # joylashgan jadvaldan bugun tugaydiganlar (guruh bo'yicha)
+                bugun_tugaydi = conn.execute(
+                    "SELECT DISTINCT guruh_id, ism, xona_nomi FROM joylashgan WHERE holat='joylashgan' AND tugash=?",
+                    (bugun,)).fetchall()
                 conn.close()
-                for b in bronlar:
-                    bosh = datetime.strptime(b["sana"], "%d.%m.%Y")
-                    tugash = bosh + timedelta(days=b["kunlar"])
-                    if tugash.strftime("%d.%m.%Y") == bugun:
-                        xid_list = get_bron_xonalar(b["id"])
-                        for xid in xid_list:
-                            bosh_qil_sana(xid, bugun, 1)
-                        # joylashgan dan chiqarish
+                chiqarilgan_guruh = set()
+                for j in bugun_tugaydi:
+                    gid = j["guruh_id"]
+                    if gid and gid not in chiqarilgan_guruh:
+                        chiqarilgan_guruh.add(gid)
+                        guruh_chiqar(gid)
+                        # Tegishli bron holatini yangilash
                         conn = get_db()
-                        conn.execute("UPDATE joylashgan SET holat='chiqdi' WHERE bron_id=?", (b["id"],))
+                        conn.execute("UPDATE bronlar SET holat='chiqgan' WHERE guruh_id=?", (gid,))
                         conn.commit()
                         conn.close()
                         for aid in DIRECTOR_IDS:
                             try:
                                 bot.send_message(aid,
-                                    f"🏠 Avtomatik bo'shatildi:\n#{b['id']} | {b['xona']}\n{b['ism']}")
+                                    f"🏠 Avtomatik bo'shatildi (12:00):\n{j['ism']} | {j['xona_nomi']}")
                             except: pass
 
             # 20:00 - kechki hisobot
