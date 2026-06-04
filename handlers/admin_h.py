@@ -6,7 +6,9 @@ from db import (get_db, get_xonalar, get_binolar, xona_band_mi, band_qil,
                 get_bron_xonalar, tugash_sanasi, format_narx, is_admin,
                 is_director, bron_id_gen, qidir_mijoz, bugungi_stat,
                 log_stat, hozirgi_mehmonlar, bugungi_keluvchilar,
-                xonaga_joylashtir, chiqish_qil, xona_kun_holati, HOLAT_EMOJI)
+                xonaga_joylashtir, chiqish_qil, xona_kun_holati, HOLAT_EMOJI,
+                joylash_guruh, guruh_chiqar, guruh_olish, mehmon_kochir,
+                joylash_uzaytir, bron_yangila, mijoz_profil, barcha_mijozlar)
 from config import TELEFON1, DIRECTOR_IDS, TZ
 import pytz
 from keyboards import (admin_kb, binolar_kb, xonalar_admin_kb, xona_detail_kb,
@@ -92,25 +94,115 @@ def register(bot):
         if not mehmonlar:
             bot.send_message(msg.chat.id, "Hozir hech kim yo'q", reply_markup=admin_kb(msg.from_user.id))
             return
+        # Guruhlash
+        guruhlar = {}
+        for m in mehmonlar:
+            g = m["guruh_id"] or f"yolg'iz_{m['id']}"
+            guruhlar.setdefault(g, []).append(m)
+
         jami_kishi = sum(m["kishi"] for m in mehmonlar)
         matn = f"🏨 HOZIRGI MEHMONLAR\n{'─'*25}\n\n"
-        matn += f"Jami: {len(mehmonlar)} xona | {jami_kishi} kishi\n\n"
-        kb = types.InlineKeyboardMarkup(row_width=1)
-        for m in mehmonlar:
-            matn += f"🛏 {m['xona_nomi']}\n👤 {m['ism']} | 📞 {m['telefon']}\n"
-            matn += f"👥 {m['kishi']} kishi | 📅 {m['sana']} - {m['tugash']}\n\n"
-            kb.add(types.InlineKeyboardButton(
-                f"🚪 {m['xona_nomi']} - {m['ism']} chiqdi",
-                callback_data=f"CHIQISH_{m['id']}"))
-        bot.send_message(msg.chat.id, matn, reply_markup=kb)
+        matn += f"Jami: {len(guruhlar)} guruh | {len(mehmonlar)} xona | {jami_kishi} kishi"
+        bot.send_message(msg.chat.id, matn)
+
+        for g, yozuvlar in guruhlar.items():
+            asosiy = yozuvlar[0]
+            xonalar_str = ", ".join(y["xona_nomi"] for y in yozuvlar)
+            t = f"👤 {asosiy['ism']} | 📞 {asosiy['telefon']}\n"
+            t += f"🛏 {xonalar_str}\n"
+            t += f"👥 {asosiy['kishi']} kishi | 📅 {asosiy['sana']} - {asosiy['tugash']}"
+            kb = types.InlineKeyboardMarkup(row_width=2)
+            kb.add(
+                types.InlineKeyboardButton("🚪 Chiqdi", callback_data=f"CHIQISH_{asosiy['id']}"),
+                types.InlineKeyboardButton("➕ Kun qo'shish", callback_data=f"UZAYT_{asosiy['id']}"),
+            )
+            kb.add(
+                types.InlineKeyboardButton("🔄 Boshqa xonaga", callback_data=f"KOCHIR_{asosiy['id']}"),
+                types.InlineKeyboardButton("👤 Profil", callback_data=f"MPROFIL_{asosiy['telefon']}"),
+            )
+            bot.send_message(msg.chat.id, t, reply_markup=kb)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("CHIQISH_"))
     def cb_chiqish(call):
         if not is_admin(call.from_user.id): return
         jid = int(call.data.replace("CHIQISH_", ""))
-        chiqish_qil(jid)
-        bot.edit_message_text("✅ Chiqish qayd qilindi!", call.message.chat.id, call.message.message_id)
+        # Tasdiq so'rash (adashib bosmaslik uchun)
+        kb = types.InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            types.InlineKeyboardButton("✅ Ha, chiqdi", callback_data=f"CHIQTASDIQ_{jid}"),
+            types.InlineKeyboardButton("❌ Yo'q", callback_data="CHIQBEKOR"),
+        )
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=kb)
+        bot.answer_callback_query(call.id, "Tasdiqlang")
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("CHIQTASDIQ_"))
+    def cb_chiqtasdiq(call):
+        if not is_admin(call.from_user.id): return
+        jid = int(call.data.replace("CHIQTASDIQ_", ""))
+        chiqish_qil(jid)  # Guruhdagi HAMMA xona birga chiqadi
+        bot.edit_message_text("✅ Chiqish qayd qilindi! Barcha xonalar bo'shatildi.",
+                              call.message.chat.id, call.message.message_id)
         bot.answer_callback_query(call.id, "Chiqdi!")
+
+    @bot.callback_query_handler(func=lambda c: c.data == "CHIQBEKOR")
+    def cb_chiqbekor(call):
+        bot.edit_message_text("Bekor qilindi", call.message.chat.id, call.message.message_id)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("UZAYT_"))
+    def cb_uzayt(call):
+        if not is_admin(call.from_user.id): return
+        jid = int(call.data.replace("UZAYT_", ""))
+        kb = types.InlineKeyboardMarkup(row_width=4)
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"UZAYTKUN_{jid}_{i}") for i in range(1, 8)]
+        kb.add(*btns)
+        bot.send_message(call.message.chat.id, "Necha kun qo'shamiz?", reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("UZAYTKUN_"))
+    def cb_uzaytkun(call):
+        if not is_admin(call.from_user.id): return
+        parts = call.data.replace("UZAYTKUN_", "").split("_")
+        jid, kun = int(parts[0]), int(parts[1])
+        ok, xabar = joylash_uzaytir(jid, kun)
+        if ok:
+            bot.edit_message_text(f"✅ {xabar}", call.message.chat.id, call.message.message_id)
+        else:
+            bot.edit_message_text(f"⚠️ {xabar}", call.message.chat.id, call.message.message_id)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("KOCHIR_"))
+    def cb_kochir(call):
+        if not is_admin(call.from_user.id): return
+        jid = int(call.data.replace("KOCHIR_", ""))
+        from db import get_xonalar, xona_band_mi
+        bugun = datetime.now(TZ).strftime("%d.%m.%Y")
+        kb = types.InlineKeyboardMarkup(row_width=2)
+        btns = []
+        for x in get_xonalar():
+            if dict(x).get("yopiq", 0): continue
+            bosh = "🔴" if xona_band_mi(x["id"], bugun) else "🟢"
+            btns.append(types.InlineKeyboardButton(
+                f"{bosh} {x['nomi']}", callback_data=f"KOCHIRX_{jid}_{x['id']}"))
+        kb.add(*btns)
+        bot.send_message(call.message.chat.id, "Qaysi xonaga ko'chiramiz?", reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("KOCHIRX_"))
+    def cb_kochirx(call):
+        if not is_admin(call.from_user.id): return
+        parts = call.data.replace("KOCHIRX_", "").split("_")
+        jid, yangi_xid = int(parts[0]), int(parts[1])
+        from db import get_xonalar
+        xona = next((x for x in get_xonalar() if x["id"] == yangi_xid), None)
+        if xona:
+            ok = mehmon_kochir(jid, yangi_xid, xona["nomi"])
+            if ok:
+                bot.edit_message_text(f"✅ {xona['nomi']} ga ko'chirildi!",
+                                      call.message.chat.id, call.message.message_id)
+            else:
+                bot.edit_message_text("⚠️ Ko'chirishda xato", call.message.chat.id, call.message.message_id)
+        bot.answer_callback_query(call.id)
 
     @bot.message_handler(func=lambda m: m.text == "🏨 Qabulxona" and is_admin(m.from_user.id))
     def h_qabulxona(msg):
@@ -142,13 +234,16 @@ def register(bot):
         if not b:
             bot.answer_callback_query(call.id, "Topilmadi")
             return
-        # Xonalarni joylashtirildi deb belgilash
+        # Xonalarni joylashtirildi deb belgilash - BITTA guruh
         xid_list = get_bron_xonalar(bid)
+        xona_royxat = []
         for xid in xid_list:
             conn = get_db()
             xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
             conn.close()
-            xonaga_joylashtir(xid, xnomi, b["ism"], b["telefon"], b["kishi"], b["sana"], b["kunlar"], bid)
+            xona_royxat.append((xid, xnomi))
+        if xona_royxat:
+            joylash_guruh(xona_royxat, b["ism"], b["telefon"], b["kishi"], b["sana"], b["kunlar"], bid)
         # Bron holatini yangilash
         conn = get_db()
         conn.execute("UPDATE bronlar SET holat='joylashgan' WHERE id=?", (bid,))
@@ -269,11 +364,14 @@ def register(bot):
             bot.answer_callback_query(call.id, "Topilmadi")
             return
         xid_list = get_bron_xonalar(bid)
+        xona_royxat = []
         for xid in xid_list:
             conn = get_db()
             xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
             conn.close()
-            xonaga_joylashtir(xid, xnomi, b["ism"], b["telefon"], b["kishi"], b["sana"], b["kunlar"], bid)
+            xona_royxat.append((xid, xnomi))
+        if xona_royxat:
+            joylash_guruh(xona_royxat, b["ism"], b["telefon"], b["kishi"], b["sana"], b["kunlar"], bid)
         conn = get_db()
         conn.execute("UPDATE bronlar SET holat='joylashgan' WHERE id=?", (bid,))
         conn.commit()
@@ -471,6 +569,39 @@ def register(bot):
         from handlers.astate import astate
         astate.pop(msg.from_user.id, None)
         bot.send_message(msg.chat.id, "Admin panel:", reply_markup=admin_kb(msg.from_user.id))
+
+    @bot.message_handler(func=lambda m: m.text == "⚙️ Sozlamalar" and is_admin(m.from_user.id))
+    def h_sozlamalar(msg):
+        from handlers.astate import astate
+        astate.pop(msg.from_user.id, None)
+        from keyboards import sozlamalar_kb
+        bot.send_message(msg.chat.id,
+            "⚙️ Sozlamalar va qo'shimcha bo'limlar:",
+            reply_markup=sozlamalar_kb(msg.from_user.id))
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("MPROFIL_"))
+    def cb_mprofil(call):
+        if not is_admin(call.from_user.id): return
+        tel = call.data.replace("MPROFIL_", "")
+        _mijoz_profil_korsat(bot, call.message.chat.id, tel)
+        bot.answer_callback_query(call.id)
+
+    @bot.message_handler(func=lambda m: m.text == "👥 Mijozlar ro'yxati" and is_admin(m.from_user.id))
+    def h_mijozlar_royxat(msg):
+        mijozlar = barcha_mijozlar(50)
+        if not mijozlar:
+            bot.send_message(msg.chat.id, "Hali mijozlar yo'q")
+            return
+        matn = f"👥 MIJOZLAR RO'YXATI\n{'━'*22}\n\n"
+        matn += f"Jami: {len(mijozlar)} ta mijoz\n\n"
+        kb = types.InlineKeyboardMarkup(row_width=1)
+        for m in mijozlar[:30]:
+            ism = m["ism"] or "Noma'lum"
+            matn += f"👤 {ism} | 📞 {m['telefon']}\n   {m['bron_soni']} bron | {format_narx(m['jami'] or 0)} so'm\n"
+            kb.add(types.InlineKeyboardButton(
+                f"👤 {ism} ({m['bron_soni']} bron)",
+                callback_data=f"MPROFIL_{m['telefon']}"))
+        bot.send_message(msg.chat.id, matn, reply_markup=kb)
 
     # ===== XONA CALLBACKLARI =====
 
@@ -1241,27 +1372,7 @@ def admin_matn_handler(bot, msg, uid, text, astate):
         return
 
     if step == "mijoz_qidir":
-        natija = qidir_mijoz(text)
-        if natija:
-            mijoz = natija.get("mijoz")
-            bron = natija.get("bron")
-            if mijoz:
-                blok = "Bloklangan" if mijoz.get("bloklangan") else "Faol"
-                matn = (f"👤 {mijoz['ism']}\n📞 {mijoz.get('telefon','')}\n"
-                        f"TG: @{mijoz.get('username','')}\nHolat: {blok}")
-                kb = types.InlineKeyboardMarkup()
-                if mijoz.get("bloklangan"):
-                    kb.add(types.InlineKeyboardButton("Blokdan chiqarish", callback_data=f"UNBLK_{mijoz['user_id']}"))
-                else:
-                    kb.add(types.InlineKeyboardButton("Bloklash", callback_data=f"BLK_{mijoz['user_id']}"))
-                if mijoz.get("user_id"):
-                    kb.add(types.InlineKeyboardButton("Xabar yuborish", callback_data=f"XBYR_{mijoz['user_id']}"))
-                bot.send_message(cid, matn, reply_markup=kb)
-            if bron:
-                tugash = tugash_sanasi(bron["sana"], bron["kunlar"])
-                bot.send_message(cid, f"#{bron['id']} | {bron['xona']}\n{bron['sana']}-{tugash} | {bron['holat']}")
-        else:
-            bot.send_message(cid, f"'{text}' topilmadi")
+        _mijoz_profil_korsat(bot, cid, text)
         return
 
     if step == "ai_info":
@@ -1452,3 +1563,45 @@ def _qabulxona_30kun(bot, cid, uid):
     kb.add(types.InlineKeyboardButton("🔙 10 kunlik", callback_data="QABUL_10KUN"))
 
     bot.send_message(cid, f"<pre>{matn}</pre>", parse_mode="HTML", reply_markup=kb)
+
+
+# ===== MIJOZ PROFILI (yordamchi) =====
+def _mijoz_profil_korsat(bot, cid, qidiruv):
+    from telebot import types
+    from db import mijoz_profil, tugash_sanasi, format_narx
+    p = mijoz_profil(qidiruv)
+    if not p:
+        bot.send_message(cid, f"'{qidiruv}' bo'yicha hech narsa topilmadi.\n\nBron ID, telefon yoki ism bilan qidiring.")
+        return
+
+    matn = f"👤 MIJOZ PROFILI\n{'━'*22}\n\n"
+    matn += f"📛 {p['ism']}\n📞 {p['telefon']}\n\n"
+    matn += f"📊 Statistika:\n"
+    matn += f"   • Jami bron: {p['jami_bron']} ta\n"
+    matn += f"   • Joylashishlar: {p['jami_joylash']} marta\n"
+    matn += f"   • Jami xarajat: {format_narx(p['jami_xarajat'])} so'm\n\n"
+
+    if p["hozir_ichida"]:
+        matn += f"🟢 HOZIR ICHIDA:\n"
+        for j in p["hozir_ichida"]:
+            matn += f"   🛏 {j['xona_nomi']} ({j['sana']}-{j['tugash']})\n"
+        matn += "\n"
+
+    if p["faol_bron"]:
+        matn += f"📋 Faol bronlar:\n"
+        for b in p["faol_bron"]:
+            t = tugash_sanasi(b["sana"], b["kunlar"])
+            h = "✅" if b["holat"] == "tasdiqlangan" else "⏳"
+            matn += f"   {h} #{b['id']} | {b['xona']} | {b['sana']}-{t}\n"
+        matn += "\n"
+
+    bot.send_message(cid, matn)
+
+    # Tarix (oxirgi bronlar)
+    if p["bronlar"]:
+        tarix = "📜 Bronlar tarixi:\n" + "─"*22 + "\n"
+        for b in p["bronlar"][:10]:
+            t = tugash_sanasi(b["sana"], b["kunlar"])
+            holat_emoji = {"tasdiqlangan":"✅","joylashgan":"🏠","bekor":"❌","kutilmoqda":"⏳"}.get(b["holat"],"•")
+            tarix += f"{holat_emoji} #{b['id']} | {b['xona']}\n   📅 {b['sana']}-{t} | {format_narx(b['narx'] or 0)} so'm\n"
+        bot.send_message(cid, tarix)
