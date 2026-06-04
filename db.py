@@ -124,6 +124,18 @@ def init_db():
         bron_id TEXT,
         holat TEXT DEFAULT 'joylashgan'
     );
+    CREATE TABLE IF NOT EXISTS tolovlar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bron_id TEXT,
+        guruh_id TEXT,
+        summa INTEGER,
+        izoh TEXT,
+        sana TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sozlama (
+        kalit TEXT PRIMARY KEY,
+        qiymat TEXT
+    );
     """)
 
     # Migrations
@@ -132,7 +144,11 @@ def init_db():
         "ALTER TABLE xonalar ADD COLUMN bino_id INTEGER DEFAULT 1",
         "ALTER TABLE xonalar ADD COLUMN aktiv INTEGER DEFAULT 1",
         "ALTER TABLE xonalar ADD COLUMN yopiq INTEGER DEFAULT 0",
+        "ALTER TABLE xonalar ADD COLUMN tozalik TEXT DEFAULT 'toza'",
         "ALTER TABLE bronlar ADD COLUMN holat TEXT DEFAULT 'kutilmoqda'",
+        "ALTER TABLE bronlar ADD COLUMN guruh_id TEXT",
+        "ALTER TABLE bronlar ADD COLUMN tolangan INTEGER DEFAULT 0",
+        "ALTER TABLE bronlar ADD COLUMN checkin INTEGER DEFAULT 0",
         "ALTER TABLE mijozlar ADD COLUMN bloklangan INTEGER DEFAULT 0",
         "ALTER TABLE mijozlar ADD COLUMN created_at TEXT",
         "ALTER TABLE mijozlar ADD COLUMN last_active TEXT",
@@ -140,6 +156,8 @@ def init_db():
         "ALTER TABLE joylashgan ADD COLUMN xona_nomi TEXT",
         "ALTER TABLE joylashgan ADD COLUMN tugash TEXT",
         "ALTER TABLE joylashgan ADD COLUMN holat TEXT DEFAULT 'joylashgan'",
+        "ALTER TABLE joylashgan ADD COLUMN narx INTEGER DEFAULT 0",
+        "ALTER TABLE joylashgan ADD COLUMN tolangan INTEGER DEFAULT 0",
     ]:
         try:
             conn.execute(sql)
@@ -224,7 +242,55 @@ def xona_band_mi(xid, sana):
     conn.close()
     return r is not None
 
+
+def _sana_qosh(sana_str, kun):
+    return (datetime.strptime(sana_str, "%d.%m.%Y") + timedelta(days=kun)).strftime("%d.%m.%Y")
+
+
+def xona_bosh_mi_oraliq(xid, bosh_sana, kunlar, istisno_guruh=None):
+    """Xona [bosh_sana, bosh_sana+kunlar) oralig'ida JOYLASHTIRISH/BRON uchun bo'shmi?
+
+    MUHIM QOIDA:
+    - Yangi mehmon kelgan kuni xona band bo'lsa -> band (qo'yib bo'lmaydi)
+    - LEKIN avvalgi mehmonning CHIQISH (tugash) kunida yangi mehmon kela oladi
+      (12:00 da bo'shaydi). Ya'ni band[sana] mavjud bo'lsa-yu, lekin o'sha band
+      yozuvi avvalgi bronning oxirgi (tugash) kuni bo'lsa - bu to'siq emas.
+
+    istisno_guruh: shu guruh/bron o'zining bandini hisobga olmaslik (o'zgartirishda)
+    Qaytaradi: (bosh_mi: bool, ziddiyat_sana: str|None)
+    """
+    conn = get_db()
+    bosh = datetime.strptime(bosh_sana, "%d.%m.%Y").date()
+    for i in range(kunlar):
+        sana = (bosh + timedelta(days=i)).strftime("%d.%m.%Y")
+        rows = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?", (xid, sana)).fetchall()
+        for row in rows:
+            bid = row["bron_id"]
+            if istisno_guruh and bid == istisno_guruh:
+                continue
+            # Bu band yozuvi qaysidir bronning/guruhning CHIQISH kunimi?
+            # Agar shu sana o'sha bandning oxirgi kuni bo'lsa - bu chiqish kuni, to'siq emas.
+            if _band_chiqish_kunimi(conn, xid, sana, bid):
+                continue
+            conn.close()
+            return False, sana
+    conn.close()
+    return True, None
+
+
+def _band_chiqish_kunimi(conn, xid, sana, bid):
+    """band[xid, sana, bid] yozuvi shu xonadagi shu bron/guruhning oxirgi (chiqish) kunimi?
+    Ya'ni ertasi kuni shu xona+bron uchun band yo'q bo'lsa - bu chiqish kuni."""
+    ertaga = _sana_qosh(sana, 1)
+    keyingi = conn.execute(
+        "SELECT 1 FROM band WHERE xona_id=? AND sana=? AND bron_id=?",
+        (xid, ertaga, bid)).fetchone()
+    # Agar ertaga shu bron uchun band bo'lmasa - bugun chiqish kuni
+    return keyingi is None
+
+
 def xona_kunlar_band(xid, bosh_sana, kunlar):
+    """Eski moslik uchun - oddiy band tekshiruvi (chiqish kuni hisobga olinmaydi)"""
     bosh = datetime.strptime(bosh_sana, "%d.%m.%Y").date()
     for i in range(kunlar):
         sana = (bosh + timedelta(days=i)).strftime("%d.%m.%Y")
@@ -238,17 +304,15 @@ def xona_kun_holati(xid, sana):
     'bosh'      -> 🟢
     'band'      -> 🔴 (bron bor, hali kelmagan)
     'joylashgan'-> 🔵 (hozir ichida)
-    'chiqish'   -> 🟡 (bugun tugash sanasi)
+    'chiqish'   -> 🟡 (bugun tugash/chiqish sanasi - 12:00 da bo'shaydi)
     """
     conn = get_db()
-    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
 
     # Joylashgan (hozir ichida)?
     joy = conn.execute(
         "SELECT * FROM joylashgan WHERE xona_id=? AND sana<=? AND tugash>=? AND holat='joylashgan'",
         (xid, sana, sana)).fetchone()
     if joy:
-        # Tugash sanasi = shu sana bo'lsa sariq
         if joy["tugash"] == sana:
             conn.close()
             return "chiqish"
@@ -259,14 +323,11 @@ def xona_kun_holati(xid, sana):
     row = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?", (xid, sana)).fetchone()
     if row and row["bron_id"]:
         bid = row["bron_id"]
-        # Tugash sanasi = shu sana bo'lsa sariq
-        b = conn.execute("SELECT * FROM bronlar WHERE id=?", (bid,)).fetchone()
+        # Shu bandning chiqish kunimi?
+        if _band_chiqish_kunimi(conn, xid, sana, bid):
+            conn.close()
+            return "chiqish"
         conn.close()
-        if b:
-            from datetime import timedelta
-            tugash = (datetime.strptime(b["sana"], "%d.%m.%Y") + timedelta(days=b["kunlar"])).strftime("%d.%m.%Y")
-            if tugash == sana:
-                return "chiqish"
         return "band"
 
     conn.close()
@@ -281,6 +342,32 @@ HOLAT_EMOJI = {
 }
 
 
+def xona_kim_band(xid, sana):
+    """Shu xonani shu kuni kim band qilgan - bron/joylashish ma'lumoti (tugma uchun)"""
+    conn = get_db()
+    # Joylashgan
+    joy = conn.execute(
+        "SELECT * FROM joylashgan WHERE xona_id=? AND sana<=? AND tugash>=? AND holat='joylashgan'",
+        (xid, sana, sana)).fetchone()
+    if joy:
+        conn.close()
+        return {"tur": "joylashgan", "ism": joy["ism"], "telefon": joy["telefon"],
+                "sana": joy["sana"], "tugash": joy["tugash"], "guruh_id": joy["guruh_id"],
+                "id": joy["id"], "bron_id": joy["bron_id"]}
+    # Band -> bron
+    row = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?", (xid, sana)).fetchone()
+    if row and row["bron_id"]:
+        b = conn.execute("SELECT * FROM bronlar WHERE id=?", (row["bron_id"],)).fetchone()
+        conn.close()
+        if b:
+            return {"tur": "bron", "ism": b["ism"], "telefon": b["telefon"],
+                    "sana": b["sana"], "kunlar": b["kunlar"], "bron_id": b["id"],
+                    "holat": b["holat"]}
+        return None
+    conn.close()
+    return None
+
+
 def xona_bugun_boshadimi(xid, sana):
     """Xona shu sanada band, lekin avvalgi bron tugash sanasi = shu sana bo'lsa True"""
     conn = get_db()
@@ -292,7 +379,6 @@ def xona_bugun_boshadimi(xid, sana):
     if not bid or bid == "admin":
         conn.close()
         return False
-    # Bu bron ning tugash sanasi = shu sana ekanligini tekshir
     b = conn.execute("SELECT * FROM bronlar WHERE id=?", (bid,)).fetchone()
     conn.close()
     if not b:
@@ -302,9 +388,11 @@ def xona_bugun_boshadimi(xid, sana):
     return tugash == sana  # Bu sana tugash sanasi = bugun bo'sh bo'ladi
 
 def band_qil(xid, bosh_sana, kunlar, bron_id):
+    """Xonani band qilish. Tugash kunini ham qo'shadi (chiqish kuni belgisi).
+    04.06 dan 2 kun -> band 04,05,06 (06 chiqish kuni, boshqa kela oladi)."""
     bosh = datetime.strptime(bosh_sana, "%d.%m.%Y").date()
     conn = get_db()
-    for i in range(kunlar):
+    for i in range(kunlar + 1):
         sana = (bosh + timedelta(days=i)).strftime("%d.%m.%Y")
         try:
             conn.execute("INSERT OR IGNORE INTO band (xona_id,sana,bron_id) VALUES (?,?,?)", (xid, sana, bron_id))
@@ -370,7 +458,8 @@ def guruh_id_yarat():
 
 def xonaga_joylashtir(xona_id, xona_nomi, ism, telefon, kishi, sana, kunlar, bron_id="", guruh_id=None):
     """Bitta xonani joylashtirish. guruh_id berilsa - shu guruhga qo'shadi.
-    band jadvaliga guruh_id ni bron_id sifatida yozadi (sinxron bo'lishi uchun)."""
+    band jadvaliga TUGASH KUNINI HAM yozadi (chiqish kuni belgisi uchun).
+    Masalan 04.06 dan 2 kun: band = 04, 05, 06 (06 chiqish kuni)."""
     tugash = tugash_sanasi(sana, kunlar)
     if not guruh_id:
         guruh_id = guruh_id_yarat()
@@ -378,8 +467,8 @@ def xonaga_joylashtir(xona_id, xona_nomi, ism, telefon, kishi, sana, kunlar, bro
     conn.execute(
         "INSERT INTO joylashgan (xona_id,xona_nomi,ism,telefon,kishi,sana,tugash,bron_id,holat,guruh_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (xona_id, xona_nomi, ism, telefon, kishi, sana, tugash, bron_id, "joylashgan", guruh_id))
-    # band jadvaliga guruh_id bilan yozish (chiqishda shu orqali tozalanadi)
-    for i in range(kunlar):
+    # band: sana dan tugash kunigacha (tugash ham kiradi - chiqish kuni)
+    for i in range(kunlar + 1):
         sana_i = (datetime.strptime(sana, "%d.%m.%Y") + timedelta(days=i)).strftime("%d.%m.%Y")
         try:
             conn.execute("INSERT OR REPLACE INTO band (xona_id,sana,bron_id) VALUES (?,?,?)",
@@ -453,29 +542,56 @@ def guruh_olish(guruh_id):
 
 
 def mehmon_kochir(joylashgan_id, yangi_xona_id, yangi_xona_nomi):
-    """Mehmonni boshqa xonaga ko'chirish. band jadvalini ham yangilaydi."""
+    """Mehmonni boshqa xonaga ko'chirish. Yangi xona band bo'lsa ko'chirmaydi.
+    Qaytaradi: (ok: bool, xabar: str)"""
     conn = get_db()
     j = conn.execute("SELECT * FROM joylashgan WHERE id=?", (joylashgan_id,)).fetchone()
     if not j:
         conn.close()
-        return False
+        return False, "Mehmon topilmadi"
     eski_xona = j["xona_id"]
+    if eski_xona == yangi_xona_id:
+        conn.close()
+        return False, "Bu allaqachon shu xona"
     guruh_id = j["guruh_id"] or j["bron_id"] or f"joylashgan_{eski_xona}"
-    # joylashgan yangilash
-    conn.execute("UPDATE joylashgan SET xona_id=?, xona_nomi=? WHERE id=?",
-                 (yangi_xona_id, yangi_xona_nomi, joylashgan_id))
-    # band: eski xonadan o'chir, yangi xonaga ko'chir
+
+    # Bu mehmonning shu xonadagi sanalari
     eski_band = conn.execute("SELECT sana FROM band WHERE xona_id=? AND bron_id=?",
                              (eski_xona, guruh_id)).fetchall()
+    sanalar = [b["sana"] for b in eski_band]
+    if not sanalar:
+        # band yo'q bo'lsa joylashgan sana-tugash dan hisoblash
+        try:
+            bosh = datetime.strptime(j["sana"], "%d.%m.%Y").date()
+            oxir = datetime.strptime(j["tugash"], "%d.%m.%Y").date()
+            kun = (oxir - bosh).days
+            sanalar = [(bosh + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(kun)]
+        except:
+            sanalar = []
+
+    # Yangi xona shu sanalarda band emasligini tekshirish (o'zinikidan tashqari)
+    for s in sanalar:
+        band = conn.execute(
+            "SELECT bron_id FROM band WHERE xona_id=? AND sana=? AND bron_id!=?",
+            (yangi_xona_id, s, guruh_id)).fetchone()
+        if band:
+            conn.close()
+            return False, f"{yangi_xona_nomi} {s} sanada band — ko'chirib bo'lmaydi"
+
+    # Ko'chirish
+    conn.execute("UPDATE joylashgan SET xona_id=?, xona_nomi=? WHERE id=?",
+                 (yangi_xona_id, yangi_xona_nomi, joylashgan_id))
     conn.execute("DELETE FROM band WHERE xona_id=? AND bron_id=?", (eski_xona, guruh_id))
-    for b in eski_band:
+    for s in sanalar:
         try:
             conn.execute("INSERT OR REPLACE INTO band (xona_id,sana,bron_id) VALUES (?,?,?)",
-                        (yangi_xona_id, b["sana"], guruh_id))
+                        (yangi_xona_id, s, guruh_id))
         except: pass
+    # Eski xonani iflos deb belgilash
+    conn.execute("UPDATE xonalar SET tozalik='iflos' WHERE id=?", (eski_xona,))
     conn.commit()
     conn.close()
-    return True
+    return True, f"{yangi_xona_nomi} ga ko'chirildi"
 
 
 def hozirgi_mehmonlar():
@@ -899,3 +1015,134 @@ def joylash_uzaytir(joylashgan_id, qoshimcha_kun):
     conn.commit()
     conn.close()
     return True, f"{qoshimcha_kun} kun uzaytirildi"
+
+
+# ===== SOZLAMA =====
+def sozlama_ol(kalit, default=None):
+    conn = get_db()
+    r = conn.execute("SELECT qiymat FROM sozlama WHERE kalit=?", (kalit,)).fetchone()
+    conn.close()
+    return r["qiymat"] if r else default
+
+
+def sozlama_saqla(kalit, qiymat):
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO sozlama (kalit, qiymat) VALUES (?,?)", (kalit, str(qiymat)))
+    conn.commit()
+    conn.close()
+
+
+# ===== NARX HISOBI =====
+def narx_hisobla(xona, kishi, kunlar):
+    """Narx rejimiga qarab hisoblaydi.
+    rejim 'xona': xona narxi * kunlar
+    rejim 'kishi': xona narxi (1 kishi narxi) * kishi * kunlar
+    """
+    rejim = sozlama_ol("narx_rejim", "xona")
+    if rejim == "kishi":
+        return (xona["narx"] or 0) * (kishi or 1) * kunlar
+    return (xona["narx"] or 0) * kunlar
+
+
+def guruh_narx_hisobla(xona_royxat_obj, kishi, kunlar):
+    """Bir nechta xona uchun jami narx. xona_royxat_obj = [xona_row, ...]"""
+    rejim = sozlama_ol("narx_rejim", "xona")
+    if rejim == "kishi":
+        # Kishi rejimida: har xona narxi 1 kishi narxi deb hisoblanadi, jami kishi * kunlar
+        # Lekin kishi xonalarga taqsimlangani uchun - sodda variant: eng arzon narx * kishi
+        narx_per = min(x["narx"] for x in xona_royxat_obj) if xona_royxat_obj else 0
+        return narx_per * (kishi or 1) * kunlar
+    return sum((x["narx"] or 0) for x in xona_royxat_obj) * kunlar
+
+
+# ===== TO'LOV =====
+def tolov_qosh(bron_id, summa, izoh=None, guruh_id=None):
+    conn = get_db()
+    conn.execute("INSERT INTO tolovlar (bron_id, guruh_id, summa, izoh, sana) VALUES (?,?,?,?,?)",
+                 (bron_id, guruh_id, summa, izoh, datetime.now(TZ).strftime("%d.%m.%Y %H:%M")))
+    # bronlar.tolangan ni yangilash
+    if bron_id:
+        b = conn.execute("SELECT tolangan FROM bronlar WHERE id=?", (bron_id,)).fetchone()
+        if b:
+            yangi = (b["tolangan"] or 0) + summa
+            conn.execute("UPDATE bronlar SET tolangan=? WHERE id=?", (yangi, bron_id))
+    conn.commit()
+    conn.close()
+
+
+def tolov_holati(bron_id):
+    """Bron to'lov holati: {jami, tolangan, qarz, holat}"""
+    conn = get_db()
+    b = conn.execute("SELECT narx, tolangan FROM bronlar WHERE id=?", (bron_id,)).fetchone()
+    conn.close()
+    if not b:
+        return None
+    jami = b["narx"] or 0
+    tolangan = b["tolangan"] or 0
+    qarz = jami - tolangan
+    if tolangan == 0:
+        holat = "tolanmagan"
+    elif qarz <= 0:
+        holat = "tolangan"
+    else:
+        holat = "qisman"
+    return {"jami": jami, "tolangan": tolangan, "qarz": qarz, "holat": holat}
+
+
+# ===== TOZALASH HOLATI =====
+def xona_tozalik_ol(xid):
+    conn = get_db()
+    r = conn.execute("SELECT tozalik FROM xonalar WHERE id=?", (xid,)).fetchone()
+    conn.close()
+    return (dict(r).get("tozalik") if r else "toza") or "toza"
+
+
+def xona_tozalik_belgila(xid, holat):
+    """holat: 'toza' yoki 'iflos'"""
+    conn = get_db()
+    conn.execute("UPDATE xonalar SET tozalik=? WHERE id=?", (holat, xid))
+    conn.commit()
+    conn.close()
+
+
+# ===== CHECK-IN =====
+def checkin_belgila(bron_id):
+    conn = get_db()
+    conn.execute("UPDATE bronlar SET checkin=1 WHERE id=?", (bron_id,))
+    conn.commit()
+    conn.close()
+
+
+# ===== DAROMAD HISOBOTI =====
+def daromad_hisobot(bosh_sana=None, oxir_sana=None):
+    """Davr bo'yicha daromad. To'lovlar asosida."""
+    conn = get_db()
+    if bosh_sana and oxir_sana:
+        rows = conn.execute("SELECT summa, sana FROM tolovlar").fetchall()
+        jami = 0
+        for r in rows:
+            try:
+                d = datetime.strptime(r["sana"].split()[0], "%d.%m.%Y").date()
+                b = datetime.strptime(bosh_sana, "%d.%m.%Y").date()
+                o = datetime.strptime(oxir_sana, "%d.%m.%Y").date()
+                if b <= d <= o:
+                    jami += r["summa"] or 0
+            except:
+                pass
+        conn.close()
+        return jami
+    else:
+        r = conn.execute("SELECT COALESCE(SUM(summa),0) as j FROM tolovlar").fetchone()
+        conn.close()
+        return r["j"]
+
+
+def kunlik_daromad(sana):
+    conn = get_db()
+    rows = conn.execute("SELECT summa, sana FROM tolovlar").fetchall()
+    conn.close()
+    jami = 0
+    for r in rows:
+        if r["sana"] and r["sana"].split()[0] == sana:
+            jami += r["summa"] or 0
+    return jami
