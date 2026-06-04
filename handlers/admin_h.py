@@ -7,7 +7,8 @@ from db import (get_db, get_xonalar, get_binolar, xona_band_mi, band_qil,
                 is_director, bron_id_gen, qidir_mijoz, bugungi_stat,
                 log_stat, hozirgi_mehmonlar, bugungi_keluvchilar,
                 xonaga_joylashtir, chiqish_qil, xona_kun_holati, HOLAT_EMOJI)
-from config import TELEFON1, DIRECTOR_IDS
+from config import TELEFON1, DIRECTOR_IDS, TZ
+import pytz
 from keyboards import (admin_kb, binolar_kb, xonalar_admin_kb, xona_detail_kb,
                        sana_kb, kunlar_kb, xonalar_kb)
 
@@ -35,7 +36,7 @@ def register(bot):
 
     @bot.message_handler(func=lambda m: m.text == "📋 Bronlar" and is_admin(m.from_user.id))
     def h_bronlar(msg):
-        bugun = datetime.now().date()
+        bugun = datetime.now(TZ).date()
         oxiri = bugun + timedelta(days=10)
         conn = get_db()
         bronlar = conn.execute("SELECT * FROM bronlar WHERE holat != 'bekor' ORDER BY sana").fetchall()
@@ -176,7 +177,7 @@ def register(bot):
         x = conn.execute("SELECT * FROM xonalar WHERE id=?", (xid,)).fetchone()
         conn.close()
         # Bugun joylashadi, faqat kishi va kun so'rash
-        bugun = datetime.now().strftime("%d.%m.%Y")
+        bugun = datetime.now(TZ).strftime("%d.%m.%Y")
         astate[call.from_user.id] = {
             "step": "joyla_kishi",
             "joyla_xid": xid,
@@ -199,7 +200,7 @@ def register(bot):
         parts = call.data.split("_")
         xid = int(parts[2])
         n = int(parts[3])
-        bugun = datetime.now().strftime("%d.%m.%Y")
+        bugun = datetime.now(TZ).strftime("%d.%m.%Y")
         conn = get_db()
         x = conn.execute("SELECT * FROM xonalar WHERE id=?", (xid,)).fetchone()
         conn.close()
@@ -234,7 +235,7 @@ def register(bot):
         st = astate.get(call.from_user.id, {})
         astate[call.from_user.id]["joyla_kunlar"] = kunlar
         astate[call.from_user.id]["step"] = "joyla_ism"
-        sana = st.get("joyla_sana", datetime.now().strftime("%d.%m.%Y"))
+        sana = st.get("joyla_sana", datetime.now(TZ).strftime("%d.%m.%Y"))
         tugash = tugash_sanasi(sana, kunlar)
         # Bron tekshirish
         ogoh = ""
@@ -394,7 +395,7 @@ def register(bot):
     def h_stat(msg):
         from db import kengaytirilgan_stat
         stat = kengaytirilgan_stat()
-        bugun = datetime.now().strftime("%d.%m.%Y")
+        bugun = datetime.now(TZ).strftime("%d.%m.%Y")
         matn = f"📊 STATISTIKA\n{'='*28}\n\n"
         matn += f"👥 Foydalanuvchilar:\n  Bugun: {stat['bugun']} | Hafta: {stat['hafta']} | Oy: {stat['oy']} | Jami: {stat['jami_mijozlar']}\n\n"
         matn += f"🎫 Bronlar: Jami {stat['jami_bronlar']} | Tasdiqlangan {stat['tasdiq_bronlar']}\n\n"
@@ -498,7 +499,7 @@ def register(bot):
         x = conn.execute("SELECT x.*, COALESCE(b.nomi,'1-bino') as bino_nomi FROM xonalar x LEFT JOIN binolar b ON x.bino_id=b.id WHERE x.id=?", (xid,)).fetchone()
         rasmlar = conn.execute("SELECT COUNT(*) as c FROM xona_media WHERE xona_id=? AND tur='photo'", (xid,)).fetchone()["c"]
         conn.close()
-        bugun = datetime.now().strftime("%d.%m.%Y")
+        bugun = datetime.now(TZ).strftime("%d.%m.%Y")
         _hol = xona_kun_holati(xid, bugun)
         h = HOLAT_EMOJI[_hol] + " " + {"bosh":"Bosh","band":"Band","joylashgan":"Ichida","chiqish":"Chiqmoqda"}[_hol]
         yopiq = dict(x).get("yopiq", 0)
@@ -532,7 +533,7 @@ def register(bot):
             h = {"tasdiqlangan": "✅", "kutilmoqda": "⏳", "joylashgan": "🏠"}.get(b["holat"], "❓")
             matn += f"{h} #{b['id']} | {b['sana']}-{tugash}\n{b['ism']} | {b['telefon']}\n\n"
             kb.add(types.InlineKeyboardButton(f"{h} #{b['id']} - {b['ism']}", callback_data=f"BDET_{b['id']}"))
-        bugun = datetime.now().date()
+        bugun = datetime.now(TZ).date()
         matn += "15 kunlik:\n"
         for i in range(15):
             kun = bugun + timedelta(days=i)
@@ -1078,7 +1079,7 @@ def register(bot):
 # ===== YORDAMCHI FUNKSIYALAR =====
 
 def _joylash_menyusi(bot, cid, uid):
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
     keluvchilar = bugungi_keluvchilar()
     bosh_list = [x for x in get_xonalar() if not xona_band_mi(x["id"], bugun) and not dict(x).get("yopiq", 0)]
     hozirgilar = hozirgi_mehmonlar()
@@ -1114,7 +1115,7 @@ def _joylash_menyusi(bot, cid, uid):
 
 
 def _bugungi_qisqa(bot, cid, uid):
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
     mehmonlar = hozirgi_mehmonlar()
     keluvchilar = bugungi_keluvchilar()
     bosh_list = [x for x in get_xonalar() if not xona_band_mi(x["id"], bugun)]
@@ -1127,7 +1128,7 @@ def _bugungi_qisqa(bot, cid, uid):
 
 
 def _bugungi_tolik(bot, cid, uid):
-    bugun = datetime.now().strftime("%d.%m.%Y")
+    bugun = datetime.now(TZ).strftime("%d.%m.%Y")
     matn = f"📊 BUGUNGI HOLAT — {bugun}\n{'─'*28}\n\n"
     conn = get_db()
     for b in get_binolar():
@@ -1170,7 +1171,7 @@ def admin_matn_handler(bot, msg, uid, text, astate):
         xid = st["joyla_xid"]
         xnomi = st["joyla_xnomi"]
         kishi = st.get("joyla_kishi", 1)
-        sana = st.get("joyla_sana", datetime.now().strftime("%d.%m.%Y"))
+        sana = st.get("joyla_sana", datetime.now(TZ).strftime("%d.%m.%Y"))
         kunlar = st.get("joyla_kunlar", 1)
         xj(xid, xnomi, st["joyla_ism"], text, kishi, sana, kunlar)
         astate.pop(uid, None)
@@ -1357,7 +1358,7 @@ def admin_matn_handler(bot, msg, uid, text, astate):
 
 def _qabulxona_yuborish(bot, cid, uid):
     """10 kunlik Qabulxona — chiroyli dizayn"""
-    bugun = datetime.now().date()
+    bugun = datetime.now(TZ).date()
     kunlar_list = [(bugun + timedelta(days=i)) for i in range(10)]
     mehmonlar = hozirgi_mehmonlar()
     keluvchilar = bugungi_keluvchilar()
@@ -1413,7 +1414,7 @@ def _qabulxona_yuborish(bot, cid, uid):
 
 def _qabulxona_30kun(bot, cid, uid):
     """30 kunlik holat"""
-    bugun = datetime.now().date()
+    bugun = datetime.now(TZ).date()
     kunlar_list = [(bugun + timedelta(days=i)) for i in range(30)]
 
     matn = "📅 30 KUNLIK XONALAR HOLATI\n"
