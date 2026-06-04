@@ -330,18 +330,32 @@ def register(bot):
                 astate[uid]["ab"]["kunlar"] = kunlar
                 sana = astate[uid]["ab"]["sana"]
                 kishi = astate[uid]["ab"].get("kishi", 1)
-                kombinatsiyalar = mos_kombinatsiya(kishi, "oila", sana, kunlar)
+                from db import barcha_variantlar, format_narx as fn
+                variantlar = barcha_variantlar(kishi, "oila", sana, kunlar)
                 tugash = tugash_sanasi(sana, kunlar)
                 kb = types.InlineKeyboardMarkup(row_width=1)
-                if kombinatsiyalar:
-                    for x in kombinatsiyalar[0]["xonalar"]:
-                        narx = format_narx(x["narx"] * kunlar)
-                        kb.add(types.InlineKeyboardButton(
-                            f"{x['nomi']} | {x['sigim']}👤 | {narx}",
-                            callback_data=f"TBXT_{x['id']}"))
-                kb.add(types.InlineKeyboardButton("Barcha bosh xonalar", callback_data="TB_BARCHASI"))
+                # Har bir variantni ko'rsatish (bitta xona va kombinatsiyalar)
+                for idx, v in enumerate(variantlar):
+                    xonalar = v["xonalar"]
+                    nomlar = " + ".join(x["nomi"] for x in xonalar)
+                    jami_narx = sum(x["narx"] for x in xonalar) * kunlar
+                    sigim = v["jami_sigim"]
+                    if v["tur"] == "bitta":
+                        belgi = "🛏"
+                    else:
+                        belgi = "🛏🛏"
+                    xid_str = "-".join(str(x["id"]) for x in xonalar)
+                    kb.add(types.InlineKeyboardButton(
+                        f"{belgi} {nomlar} | {sigim}👤 | {fn(jami_narx)}",
+                        callback_data=f"TBKOMB_{xid_str}"))
+                kb.add(types.InlineKeyboardButton("➕ Boshqa/qo'lda tanlash", callback_data="TB_BARCHASI"))
                 astate[uid]["step"] = "tb_xona"
-                bot.send_message(cid, f"Sana: {sana}-{tugash} | {kunlar} kun\nXona:", reply_markup=kb)
+                matn = f"📅 {sana}-{tugash} | {kunlar} kun | 👥 {kishi} kishi\n\n"
+                if variantlar:
+                    matn += "Mos variantlar:"
+                else:
+                    matn += "Mos variant topilmadi. Qo'lda tanlang:"
+                bot.send_message(cid, matn, reply_markup=kb)
                 bot.answer_callback_query(call.id)
                 return
 
@@ -400,7 +414,8 @@ def register(bot):
         
         for v in variantlar:
             xonalar = v["xonalar"]
-            jami_narx = sum(x["narx"] for x in xonalar) * kunlar
+            from db import guruh_narx_hisobla
+            jami_narx = guruh_narx_hisobla(xonalar, kishi, kunlar)
             xona_nomi = " + ".join(x["nomi"] for x in xonalar)
             jami_sigim = v["jami_sigim"]
             emoji = tur_emoji.get(v["tur"], "🔹")
@@ -461,10 +476,11 @@ def register(bot):
             bot.answer_callback_query(call.id, "Xona topilmadi")
             return
 
-        jami_narx = sum(x["narx"] for x in xonalar_info) * kunlar
+        kishi = state.get(uid, {}).get("kishi", 1)
+        from db import guruh_narx_hisobla
+        jami_narx = guruh_narx_hisobla(xonalar_info, kishi, kunlar)
         xona_nomi = " + ".join(x["nomi"] for x in xonalar_info)
         tugash = tugash_sanasi(sana, kunlar)
-        kishi = state.get(uid, {}).get("kishi", 1)
         jami_sigim = sum(x["sigim"] for x in xonalar_info)
 
         state[uid] = {
