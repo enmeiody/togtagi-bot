@@ -39,9 +39,11 @@ def admin_kb(uid=None):
 def sozlamalar_kb(uid=None):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(
-        "🏢 Xonalar", "📸 Galereya",
-        "📄 Hisobot", "🤖 AI malumot",
-        "🔗 Ijtimoiy tarmoqlar", "👥 Mijozlar ro'yxati",
+        "🏢 Xonalar", "💵 Narx rejimi",
+        "📸 Galereya", "📄 Hisobot",
+        "💰 Daromad", "🧹 Tozalash",
+        "🤖 AI malumot", "🔗 Ijtimoiy tarmoqlar",
+        "👥 Mijozlar ro'yxati",
     )
     from db import is_director
     if uid and is_director(uid):
