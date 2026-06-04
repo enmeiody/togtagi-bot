@@ -608,7 +608,8 @@ def register(bot):
             "➕ Tezkor bron", "📸 Galereya", "📄 Hisobot",
             "🤖 AI malumot", "🔙 Asosiy menyu", "👮 Adminlar",
             "📊 Statistika", "🔙 Admin menyu", "🔗 Ijtimoiy tarmoqlar",
-            "⚙️ Sozlamalar", "👥 Mijozlar ro'yxati"
+            "⚙️ Sozlamalar", "👥 Mijozlar ro'yxati",
+            "💵 Narx rejimi", "💰 Daromad", "🧹 Tozalash"
         ]
         if is_admin(uid) and text in ADMIN_BTNLAR:
             return
