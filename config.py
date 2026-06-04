@@ -1,6 +1,10 @@
 import os
+import pytz
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+
+# Vaqt zonasi - Uzbekiston (UTC+5)
+TZ = pytz.timezone("Asia/Tashkent")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 TELEFON1 = "+998993342035"
