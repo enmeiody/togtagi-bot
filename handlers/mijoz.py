@@ -2,7 +2,8 @@ from telebot import types
 from db import (get_til, set_til, saqlash_mijoz, format_narx, tugash_sanasi,
                 bron_id_gen, get_bron, get_bron_xonalar, bekor_qil_bron,
                 band_qil, mos_kombinatsiya, is_admin, get_db, log_stat, xona_kunlar_band)
-from config import txt, M, TELEFON1, TELEFON2, INSTAGRAM, DIRECTOR_IDS
+from config import txt, M, TELEFON1, TELEFON2, INSTAGRAM, DIRECTOR_IDS, TZ
+import pytz
 from keyboards import asosiy_kb, til_kb, sana_kb, kunlar_kb, xonalar_kb
 from datetime import datetime
 
@@ -525,7 +526,7 @@ def register(bot):
                     (bid, st["ism"], st["telefon"], st["sana"], st["kunlar"],
                      st["kishi"], st["xona_nomi"], st["jami_narx"], "kutilmoqda",
                      uid, call.from_user.username or "",
-                     datetime.now().strftime("%d.%m.%Y %H:%M")))
+                     datetime.now(TZ).strftime("%d.%m.%Y %H:%M")))
                 for xid in st["xona_ids"]:
                     conn.execute("INSERT OR IGNORE INTO bron_xonalar VALUES (?,?)", (bid, xid))
                 try:
@@ -534,7 +535,7 @@ def register(bot):
                         VALUES (?,?,?,?,?)""",
                         (uid, st["ism"], st["telefon"],
                          call.from_user.username or "",
-                         datetime.now().strftime("%d.%m.%Y %H:%M")))
+                         datetime.now(TZ).strftime("%d.%m.%Y %H:%M")))
                 except:
                     pass
                 conn.commit()
