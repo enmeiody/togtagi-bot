@@ -810,27 +810,88 @@ def register(bot):
         xid = int(call.data.replace("AXB_", ""))
         conn = get_db()
         xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
+        # Joylashganlar
+        joylar = conn.execute(
+            "SELECT * FROM joylashgan WHERE xona_id=? AND holat='joylashgan' ORDER BY id DESC",
+            (xid,)).fetchall()
+        # Bronlar
         bids = conn.execute("SELECT DISTINCT bron_id FROM bron_xonalar WHERE xona_id=?", (xid,)).fetchall()
         bronlar = []
         for r in bids:
-            b = conn.execute("SELECT * FROM bronlar WHERE id=? AND holat NOT IN ('bekor')", (r["bron_id"],)).fetchone()
+            b = conn.execute("SELECT * FROM bronlar WHERE id=? AND holat NOT IN ('bekor','chiqgan')",
+                            (r["bron_id"],)).fetchone()
             if b: bronlar.append(b)
         conn.close()
-        matn = f"{xnomi} bronlari:\n\n"
-        kb = types.InlineKeyboardMarkup(row_width=1)
-        for b in bronlar[-8:]:
-            tugash = tugash_sanasi(b["sana"], b["kunlar"])
-            h = {"tasdiqlangan": "✅", "kutilmoqda": "⏳", "joylashgan": "🏠"}.get(b["holat"], "❓")
-            matn += f"{h} #{b['id']} | {b['sana']}-{tugash}\n{b['ism']} | {b['telefon']}\n\n"
-            kb.add(types.InlineKeyboardButton(f"{h} #{b['id']} - {b['ism']}", callback_data=f"BDET_{b['id']}"))
+
+        matn = f"📋 {xnomi} - HOLAT\n{'─'*22}\n\n"
+
+        # 15 kunlik jadval (rang bilan)
         bugun = datetime.now(TZ).date()
-        matn += "15 kunlik:\n"
+        matn += "📅 15 kunlik:\n"
         for i in range(15):
             kun = bugun + timedelta(days=i)
-            h = "🔴" if xona_band_mi(xid, kun.strftime("%d.%m.%Y")) else "🟢"
-            matn += f"{h}{kun.strftime('%d/%m')} "
+            hol = xona_kun_holati(xid, kun.strftime("%d.%m.%Y"))
+            matn += f"{HOLAT_EMOJI[hol]}{kun.strftime('%d')} "
             if (i+1) % 5 == 0: matn += "\n"
+        matn += "\n🟢bo'sh 🔴band 🔵ichida 🟡chiqish\n\n"
+
+        kb = types.InlineKeyboardMarkup(row_width=1)
+
+        # Joylashganlar
+        if joylar:
+            matn += "🔵 Hozir joylashgan:\n"
+            for j in joylar:
+                matn += f"  • {j['ism']} | {j['telefon']}\n    {j['sana']}-{j['tugash']}\n"
+                kb.add(types.InlineKeyboardButton(
+                    f"🔵 {j['ism']} (joylashgan) - boshqarish",
+                    callback_data=f"JDET_{j['id']}"))
+            matn += "\n"
+
+        # Bronlar
+        if bronlar:
+            matn += "📋 Bronlar:\n"
+            for b in bronlar[-8:]:
+                tugash = tugash_sanasi(b["sana"], b["kunlar"])
+                h = {"tasdiqlangan": "✅", "kutilmoqda": "⏳", "joylashgan": "🏠"}.get(b["holat"], "❓")
+                matn += f"  {h} #{b['id']} {b['ism']} ({b['sana']}-{tugash})\n"
+                kb.add(types.InlineKeyboardButton(
+                    f"{h} #{b['id']} {b['ism']} - boshqarish",
+                    callback_data=f"BDET_{b['id']}"))
+
+        if not joylar and not bronlar:
+            matn += "✅ Bo'sh - hech qanday bron/mehmon yo'q"
+
         kb.add(types.InlineKeyboardButton("🔙 Orqaga", callback_data=f"AX_{xid}"))
+        try:
+            bot.edit_message_text(matn, call.message.chat.id, call.message.message_id, reply_markup=kb)
+        except:
+            bot.send_message(call.message.chat.id, matn, reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("JDET_"))
+    def cb_jdet(call):
+        """Joylashgan mehmonni boshqarish (xona detaildan)"""
+        if not is_admin(call.from_user.id): return
+        jid = int(call.data.replace("JDET_", ""))
+        conn = get_db()
+        j = conn.execute("SELECT * FROM joylashgan WHERE id=?", (jid,)).fetchone()
+        conn.close()
+        if not j:
+            bot.answer_callback_query(call.id, "Topilmadi")
+            return
+        matn = (f"🔵 JOYLASHGAN MEHMON\n{'─'*20}\n\n"
+                f"👤 {j['ism']}\n📞 {j['telefon']}\n"
+                f"🛏 {j['xona_nomi']}\n👥 {j['kishi']} kishi\n"
+                f"📅 {j['sana']} - {j['tugash']}")
+        kb = types.InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            types.InlineKeyboardButton("🚪 Chiqdi", callback_data=f"CHIQISH_{jid}"),
+            types.InlineKeyboardButton("➕ Kun qo'shish", callback_data=f"UZAYT_{jid}"),
+        )
+        kb.add(
+            types.InlineKeyboardButton("🔄 Boshqa xonaga", callback_data=f"KOCHIR_{jid}"),
+            types.InlineKeyboardButton("👤 Profil", callback_data=f"MPROFIL_{j['telefon']}"),
+        )
         try:
             bot.edit_message_text(matn, call.message.chat.id, call.message.message_id, reply_markup=kb)
         except:
@@ -956,10 +1017,34 @@ def register(bot):
     def cb_axbosh(call):
         if not is_admin(call.from_user.id): return
         xid = int(call.data.replace("AXBOSH_", ""))
-        from handlers.astate import astate
-        astate[call.from_user.id] = {"step": "bosh_sana", "xid": xid}
-        bot.send_message(call.message.chat.id, "Sana tanlang:", reply_markup=sana_kb())
+        _xona_boshatish_royxat(bot, call.message.chat.id, xid, call.message.message_id)
         bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("BOSHJOY_"))
+    def cb_boshjoy(call):
+        """Joylashgan mehmonni bo'shatish (guruh bilan)"""
+        if not is_admin(call.from_user.id): return
+        parts = call.data.replace("BOSHJOY_", "").split("_")
+        jid = int(parts[0]); xid = int(parts[1])
+        from db import chiqish_qil
+        chiqish_qil(jid)
+        bot.answer_callback_query(call.id, "Bo'shatildi!")
+        _xona_boshatish_royxat(bot, call.message.chat.id, xid, call.message.message_id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("BOSHBRON_"))
+    def cb_boshbron(call):
+        """Bronni bekor qilish (xona bo'shatishdan)"""
+        if not is_admin(call.from_user.id): return
+        parts = call.data.replace("BOSHBRON_", "").split("_")
+        bid = parts[0]; xid = int(parts[1])
+        b = get_bron(bid)
+        bekor_qil_bron(bid)
+        if b and b["user_id"]:
+            try:
+                bot.send_message(b["user_id"], f"❌ Bron #{bid} bekor qilindi.\n{TELEFON1}")
+            except: pass
+        bot.answer_callback_query(call.id, "Bron bekor qilindi!")
+        _xona_boshatish_royxat(bot, call.message.chat.id, xid, call.message.message_id)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("AXRASM_"))
     def cb_axrasm(call):
@@ -1320,6 +1405,63 @@ def register(bot):
 
 
 # ===== YORDAMCHI FUNKSIYALAR =====
+
+def _xona_boshatish_royxat(bot, cid, xid, edit_msg=None):
+    """Xonadagi joylashgan + bronlarni tugma qilib ko'rsatadi - bosilganda bo'shatadi"""
+    from telebot import types
+    from db import get_db, tugash_sanasi
+    conn = get_db()
+    xnomi = conn.execute("SELECT nomi FROM xonalar WHERE id=?", (xid,)).fetchone()["nomi"]
+    # Hozir joylashganlar
+    joylar = conn.execute(
+        "SELECT * FROM joylashgan WHERE xona_id=? AND holat='joylashgan' ORDER BY id DESC",
+        (xid,)).fetchall()
+    # Bronlar (bekor bo'lmagan, joylashmagan)
+    bids = conn.execute("SELECT DISTINCT bron_id FROM bron_xonalar WHERE xona_id=?", (xid,)).fetchall()
+    bronlar = []
+    for r in bids:
+        b = conn.execute(
+            "SELECT * FROM bronlar WHERE id=? AND holat IN ('kutilmoqda','tasdiqlangan')",
+            (r["bron_id"],)).fetchone()
+        if b:
+            bronlar.append(b)
+    conn.close()
+
+    matn = f"🔓 {xnomi} - BO'SHATISH\n{'─'*22}\n\n"
+    kb = types.InlineKeyboardMarkup(row_width=1)
+
+    if joylar:
+        matn += "🔵 Hozir joylashgan:\n"
+        for j in joylar:
+            matn += f"  • {j['ism']} ({j['sana']}-{j['tugash']})\n"
+            kb.add(types.InlineKeyboardButton(
+                f"🚪 Bo'shatish: {j['ism']} (joylashgan)",
+                callback_data=f"BOSHJOY_{j['id']}_{xid}"))
+        matn += "\n"
+
+    if bronlar:
+        matn += "🔴 Bronlar:\n"
+        for b in bronlar:
+            tugash = tugash_sanasi(b["sana"], b["kunlar"])
+            h = "✅" if b["holat"] == "tasdiqlangan" else "⏳"
+            matn += f"  {h} #{b['id']} {b['ism']} ({b['sana']}-{tugash})\n"
+            kb.add(types.InlineKeyboardButton(
+                f"🗑 Bekor: #{b['id']} {b['ism']} (bron)",
+                callback_data=f"BOSHBRON_{b['id']}_{xid}"))
+        matn += "\n"
+
+    if not joylar and not bronlar:
+        matn += "✅ Bu xona allaqachon bo'sh.\nHech qanday bron yoki mehmon yo'q."
+
+    kb.add(types.InlineKeyboardButton("🔙 Orqaga", callback_data=f"AX_{xid}"))
+
+    if edit_msg:
+        try:
+            bot.edit_message_text(matn, cid, edit_msg, reply_markup=kb)
+            return
+        except: pass
+    bot.send_message(cid, matn, reply_markup=kb)
+
 
 def _joyla_qosh_xona(bot, cid, uid, edit_msg=None):
     """Joylashda qo'shimcha xona tanlash (kishi sig'maganda)"""
