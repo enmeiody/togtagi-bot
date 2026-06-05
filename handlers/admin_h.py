@@ -428,16 +428,101 @@ def register(bot):
     def cb_joyla_qosh_tasdiq(call):
         if not is_admin(call.from_user.id): return
         from handlers.astate import astate
+        from db import get_xonalar
         st = astate.get(call.from_user.id, {})
-        sana = st.get("joyla_sana", "")
-        kunlar = st.get("joyla_kunlar", 1)
+        xona_ids = st.get("joyla_xona_ids", [])
+        kishi = st.get("joyla_kishi", 1)
+        barcha_x = {x["id"]: x for x in get_xonalar()}
+        jami_sigim = sum(barcha_x[i]["sigim"] for i in xona_ids if i in barcha_x)
+
+        # Agar 2+ xona va sig'im kishiga teng/ortiq bo'lsa - taqsimot usulini so'rash
+        if len(xona_ids) >= 2 and jami_sigim >= kishi:
+            kb = types.InlineKeyboardMarkup(row_width=1)
+            kb.add(
+                types.InlineKeyboardButton("📊 Sig'im bo'yicha taqsimla", callback_data="JOYLA_TAQSIM_avto"),
+                types.InlineKeyboardButton("🏠 Har xonaga o'zim belgilayman", callback_data="JOYLA_TAQSIM_qol"),
+            )
+            nomlar = ", ".join(barcha_x[i]["nomi"] for i in xona_ids if i in barcha_x)
+            bot.send_message(call.message.chat.id,
+                f"👥 {kishi} kishi → {nomlar}\n\nKishilarni qanday joylaymiz?",
+                reply_markup=kb)
+            bot.answer_callback_query(call.id)
+            return
+
+        # Bitta xona yoki ortiqcha - to'g'ridan ismga
         st["step"] = "joyla_ism"
         astate[call.from_user.id] = st
+        sana = st.get("joyla_sana", "")
+        kunlar = st.get("joyla_kunlar", 1)
         tugash = tugash_sanasi(sana, kunlar)
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
         kb.add("🔙 Admin menyu")
         bot.send_message(call.message.chat.id,
             f"📅 {sana} - {tugash} | {kunlar} kun\n\nMijoz ismi:", reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data == "JOYLA_TAQSIM_avto")
+    def cb_joyla_taqsim_avto(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        st = astate.get(call.from_user.id, {})
+        st["joyla_taqsim"] = "avto"  # sig'im bo'yicha
+        st["step"] = "joyla_ism"
+        astate[call.from_user.id] = st
+        sana = st.get("joyla_sana", "")
+        kunlar = st.get("joyla_kunlar", 1)
+        tugash = tugash_sanasi(sana, kunlar)
+        kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        kb.add("🔙 Admin menyu")
+        bot.send_message(call.message.chat.id,
+            f"📊 Sig'im bo'yicha taqsimlanadi\n📅 {sana} - {tugash}\n\nMijoz ismi:", reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data == "JOYLA_TAQSIM_qol")
+    def cb_joyla_taqsim_qol(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        st = astate.get(call.from_user.id, {})
+        st["joyla_taqsim"] = "qol"
+        st["joyla_xona_kishi"] = {}  # har xona uchun kishi
+        st["joyla_taqsim_idx"] = 0
+        astate[call.from_user.id] = st
+        _joyla_xona_kishi_sora(bot, call.message.chat.id, call.from_user.id)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("JOYLA_XKISHI_"))
+    def cb_joyla_xkishi(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        n = int(call.data.replace("JOYLA_XKISHI_", ""))
+        st = astate.get(call.from_user.id, {})
+        idx = st.get("joyla_taqsim_idx", 0)
+        xona_ids = st.get("joyla_xona_ids", [])
+        if idx < len(xona_ids):
+            st["joyla_xona_kishi"][xona_ids[idx]] = n
+            st["joyla_taqsim_idx"] = idx + 1
+        astate[call.from_user.id] = st
+        # Keyingi xona yoki ismga o'tish
+        if st["joyla_taqsim_idx"] < len(xona_ids):
+            _joyla_xona_kishi_sora(bot, call.message.chat.id, call.from_user.id, call.message.message_id)
+        else:
+            st["step"] = "joyla_ism"
+            astate[call.from_user.id] = st
+            sana = st.get("joyla_sana", "")
+            kunlar = st.get("joyla_kunlar", 1)
+            tugash = tugash_sanasi(sana, kunlar)
+            # Taqsimot xulosasi
+            from db import get_xonalar
+            barcha_x = {x["id"]: x for x in get_xonalar()}
+            xulosa = ", ".join(f"{barcha_x[i]['nomi']}: {st['joyla_xona_kishi'][i]}👤"
+                               for i in xona_ids if i in barcha_x)
+            try:
+                bot.edit_message_text(f"✅ {xulosa}", call.message.chat.id, call.message.message_id)
+            except: pass
+            kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            kb.add("🔙 Admin menyu")
+            bot.send_message(call.message.chat.id,
+                f"📅 {sana} - {tugash} | {kunlar} kun\n\nMijoz ismi:", reply_markup=kb)
         bot.answer_callback_query(call.id)
 
     # Bronlar bo'limidan joylash
@@ -1468,28 +1553,86 @@ def _tb_yakunla(bot, cid, uid, st):
     astate.pop(uid, None)
 
 
-def _joyla_yakunla(bot, cid, uid, st, narx):
-    """Joylashni narx bilan yakunlash"""
+def _joyla_xona_kishi_sora(bot, cid, uid, edit_msg=None):
+    """Har bir xona uchun necha kishi degan savol"""
+    from telebot import types
     from handlers.astate import astate
-    from db import get_xonalar, joylash_guruh, get_db, tugash_sanasi, format_narx as fn
+    from db import get_xonalar
+    st = astate.get(uid, {})
+    xona_ids = st.get("joyla_xona_ids", [])
+    idx = st.get("joyla_taqsim_idx", 0)
+    kishi = st.get("joyla_kishi", 1)
+    if idx >= len(xona_ids):
+        return
+    barcha_x = {x["id"]: x for x in get_xonalar()}
+    xid = xona_ids[idx]
+    xona = barcha_x.get(xid)
+    if not xona:
+        return
+    # Allaqachon taqsimlangan
+    taqsimlangan = sum(st.get("joyla_xona_kishi", {}).values())
+    qolgan = kishi - taqsimlangan
+    # Tugmalar: 1 dan (qolgan + biroz ortiqcha) gacha
+    maks = max(qolgan + 2, xona["sigim"] + 2)
+    kb = types.InlineKeyboardMarkup(row_width=5)
+    btns = [types.InlineKeyboardButton(str(i), callback_data=f"JOYLA_XKISHI_{i}")
+            for i in range(1, min(maks, 15) + 1)]
+    kb.add(*btns)
+    matn = (f"👥 {xona['nomi']} ({xona['sigim']}👤 sig'im)\n"
+            f"Jami {kishi} kishi, {qolgan} kishi qoldi.\n\n"
+            f"Bu xonaga necha kishi?")
+    if edit_msg:
+        try:
+            bot.edit_message_text(matn, cid, edit_msg, reply_markup=kb)
+            return
+        except: pass
+    bot.send_message(cid, matn, reply_markup=kb)
+
+
+def _joyla_yakunla(bot, cid, uid, st, narx):
+    """Joylashni narx bilan yakunlash. Taqsimotni hisobga oladi."""
+    from handlers.astate import astate
+    from db import get_xonalar, joylash_guruh, get_db, tugash_sanasi, format_narx as fn, narx_hisobla
     kishi = st.get("joyla_kishi", 1)
     sana = st.get("joyla_sana", datetime.now(TZ).strftime("%d.%m.%Y"))
     kunlar = st.get("joyla_kunlar", 1)
     tel = st.get("joyla_tel", "")
     ism = st.get("joyla_ism", "")
     xona_ids = st.get("joyla_xona_ids", [st.get("joyla_xid")])
+    taqsim = st.get("joyla_taqsim", "avto")
+    xona_kishi = st.get("joyla_xona_kishi", {})
     barcha_x = {x["id"]: x for x in get_xonalar()}
-    xona_royxat = [(xid, barcha_x[xid]["nomi"]) for xid in xona_ids if xid in barcha_x]
+
+    # xona_royxat tuzish - qo'lda taqsim bo'lsa har xonaga kishi qo'shamiz
+    if taqsim == "qol" and xona_kishi:
+        xona_royxat = [(xid, barcha_x[xid]["nomi"], xona_kishi.get(xid, 0))
+                       for xid in xona_ids if xid in barcha_x]
+    else:
+        xona_royxat = [(xid, barcha_x[xid]["nomi"]) for xid in xona_ids if xid in barcha_x]
+
     gid = joylash_guruh(xona_royxat, ism, tel, kishi, sana, kunlar)
+
+    # Narxni har xonaga taqsimlash (har xona kishi soniga qarab)
     conn = get_db()
-    conn.execute("UPDATE joylashgan SET narx=? WHERE guruh_id=?", (narx, gid))
+    joylar = conn.execute("SELECT id, xona_id, kishi FROM joylashgan WHERE guruh_id=?", (gid,)).fetchall()
+    # Agar admin yagona narx kiritgan bo'lsa - oxirgi xonaga to'liq, qolganlarga 0?
+    # Yaxshisi: har xona narxini alohida hisoblab, ularning yig'indisi = umumiy.
+    # Lekin admin qo'lda narx kiritgan - uni guruhga umumiy yozamiz (1-yozuvga to'liq, qolgan 0)
+    # Hisobot uchun: guruh narxi = admin kiritgan narx. Har yozuvga proporsional.
+    avto_jami = sum(narx_hisobla(barcha_x[j["xona_id"]], j["kishi"], kunlar) for j in joylar) or 1
+    for j in joylar:
+        xona_avto = narx_hisobla(barcha_x[j["xona_id"]], j["kishi"], kunlar)
+        ulush = int(round(narx * xona_avto / avto_jami))
+        conn.execute("UPDATE joylashgan SET narx=? WHERE id=?", (ulush, j["id"]))
     conn.commit()
     conn.close()
+
     astate.pop(uid, None)
     tugash = tugash_sanasi(sana, kunlar)
-    xonalar_str = ", ".join(x[1] for x in xona_royxat)
+    # Xulosa
+    xulosa = ", ".join(f"{barcha_x[j['xona_id']]['nomi']}({j['kishi']}👤)" for j in joylar)
     bot.send_message(cid,
-        f"✅ Joylashtirildi!\n\n🛏 {xonalar_str}\n👤 {ism} | 📞 {tel}\n"
+        f"✅ Joylashtirildi!\n\n🛏 {xulosa}\n👤 {ism} | 📞 {tel}\n"
         f"👥 {kishi} kishi\n📅 {sana} - {tugash}\n💰 {fn(narx)} so'm",
         reply_markup=admin_kb(uid))
 
