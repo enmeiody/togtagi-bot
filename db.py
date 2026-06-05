@@ -733,9 +733,11 @@ def kengaytirilgan_stat():
 
 
 # ===== KOMBINATSIYA =====
-def barcha_variantlar(kishi, guruh, sana, kunlar=1):
+def barcha_variantlar(kishi, guruh, sana, kunlar=1, max_ortiqcha=None):
     """Berilgan kishi soni uchun xona variantlari.
     Chiqish-kuni mantig'i bilan (xona_bosh_mi_oraliq).
+    max_ortiqcha: bitta xonaga sig'imdan ortiq joylashning maksimal soni.
+       None = cheksiz (admin). Mijoz uchun 2 beriladi.
     Variantlar: bitta to'liq mos, kombinatsiyalar, va ortiqcha (1 xonaga ko'p kishi)."""
     xonalar = get_xonalar()
     bosh = []
@@ -764,6 +766,20 @@ def barcha_variantlar(kishi, guruh, sana, kunlar=1):
                 korilgan.add(k)
                 variantlar.append({"xonalar": [x], "tur": "bitta",
                                    "jami_sigim": x["sigim"], "ortiqcha": x["sigim"] - kishi})
+            break
+
+    # 1b. Ortiqcha joylash - bitta xonaga sig'imdan ko'p kishi
+    # (masalan 5 kishi 3 kishilik xonada). Eng katta xonadan boshlab.
+    for x in sorted(bosh, key=lambda a: a["sigim"], reverse=True):
+        if x["sigim"] < kishi:
+            ortiqcha = kishi - x["sigim"]
+            if max_ortiqcha is not None and ortiqcha > max_ortiqcha:
+                continue
+            k = kalit([x])
+            if k not in korilgan:
+                korilgan.add(k)
+                variantlar.append({"xonalar": [x], "tur": "ortiqcha",
+                                   "jami_sigim": x["sigim"], "ortiqcha": -ortiqcha})
             break
 
     # 2. Kombinatsiyalar (2-3 xona) - turli yondashuvlar
@@ -808,8 +824,11 @@ def barcha_variantlar(kishi, guruh, sana, kunlar=1):
                 variantlar.append({"xonalar": kom, "tur": "kombinatsiya",
                                    "jami_sigim": jami, "ortiqcha": jami - kishi})
 
-    # Variantlarni tartiblash: kam ortiqcha joy birinchi, kam xona birinchi
-    variantlar.sort(key=lambda v: (len(v["xonalar"]), abs(v["ortiqcha"])))
+    # Tartiblash: sig'adigan variantlar birinchi, ortiqcha (sig'maydigan) oxirida
+    def tartib_kalit(v):
+        ortiqcha_joylash = 1 if v["tur"] == "ortiqcha" else 0
+        return (ortiqcha_joylash, len(v["xonalar"]), abs(v["ortiqcha"]))
+    variantlar.sort(key=tartib_kalit)
     return variantlar[:6]
 
 
@@ -1066,25 +1085,40 @@ def sozlama_saqla(kalit, qiymat):
 
 # ===== NARX HISOBI =====
 def narx_hisobla(xona, kishi, kunlar):
-    """Narx rejimiga qarab hisoblaydi.
-    rejim 'xona': xona narxi * kunlar
-    rejim 'kishi': xona narxi (1 kishi narxi) * kishi * kunlar
+    """Narx hisobi.
+    rejim 'xona': xona narxi * kunlar (kishi soniga qaramaydi)
+    rejim 'kishi': sig'imgacha xona narxi, sig'imdan ortig'iga per-person qo'shimcha
+       per_person = xona_narxi / sigim
+       narx = max(xona_narxi, kishi * per_person) * kunlar
+       Misol: 3 kishilik 300k -> 2 kishi=300k, 4 kishi=400k, 5 kishi=500k
     """
+    narx = xona["narx"] or 0
+    sigim = xona["sigim"] or 1
+    kishi = kishi or 1
     rejim = sozlama_ol("narx_rejim", "xona")
     if rejim == "kishi":
-        return (xona["narx"] or 0) * (kishi or 1) * kunlar
-    return (xona["narx"] or 0) * kunlar
+        per = narx / sigim if sigim else narx
+        bir_kun = max(narx, kishi * per)
+        return int(round(bir_kun)) * kunlar
+    return narx * kunlar
 
 
 def guruh_narx_hisobla(xona_royxat_obj, kishi, kunlar):
-    """Bir nechta xona uchun jami narx. xona_royxat_obj = [xona_row, ...]"""
+    """Bir yoki bir nechta xona uchun jami narx.
+    rejim 'xona': xona narxlari yig'indisi * kunlar
+    rejim 'kishi': sig'imgacha xonalar narxi, ortig'iga o'rtacha per-person qo'shimcha
+    """
+    if not xona_royxat_obj:
+        return 0
+    kishi = kishi or 1
+    jami_narx = sum((x["narx"] or 0) for x in xona_royxat_obj)
+    jami_sigim = sum((x["sigim"] or 0) for x in xona_royxat_obj) or 1
     rejim = sozlama_ol("narx_rejim", "xona")
     if rejim == "kishi":
-        # Kishi rejimida: har xona narxi 1 kishi narxi deb hisoblanadi, jami kishi * kunlar
-        # Lekin kishi xonalarga taqsimlangani uchun - sodda variant: eng arzon narx * kishi
-        narx_per = min(x["narx"] for x in xona_royxat_obj) if xona_royxat_obj else 0
-        return narx_per * (kishi or 1) * kunlar
-    return sum((x["narx"] or 0) for x in xona_royxat_obj) * kunlar
+        per = jami_narx / jami_sigim if jami_sigim else jami_narx
+        bir_kun = max(jami_narx, kishi * per)
+        return int(round(bir_kun)) * kunlar
+    return jami_narx * kunlar
 
 
 # ===== TO'LOV =====
