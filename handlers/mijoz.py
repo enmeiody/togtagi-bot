@@ -382,9 +382,9 @@ def register(bot):
             bot.answer_callback_query(call.id)
             return
 
-        # Barcha variantlarni ko'rsat
+        # Barcha variantlarni ko'rsat (mijoz uchun ortiqcha joylash max 2 kishi)
         from db import barcha_variantlar
-        variantlar = barcha_variantlar(kishi, guruh, sana, kunlar)
+        variantlar = barcha_variantlar(kishi, guruh, sana, kunlar, max_ortiqcha=2)
         
         if not variantlar:
             try:
@@ -401,17 +401,10 @@ def register(bot):
         
         tur_emoji = {
             "bitta": "✅",
-            "ortiqcha_1": "⚠️",
+            "ortiqcha": "👥",
             "kombinatsiya": "🔢",
-            "kombinatsiya_2": "🔄"
         }
-        tur_izoh = {
-            "bitta": "",
-            "ortiqcha_1": " (1 kishi ko'p yotadi)",
-            "kombinatsiya": " (bir necha xona)",
-            "kombinatsiya_2": " (aralash qavat)"
-        }
-        
+
         for v in variantlar:
             xonalar = v["xonalar"]
             from db import guruh_narx_hisobla
@@ -419,7 +412,13 @@ def register(bot):
             xona_nomi = " + ".join(x["nomi"] for x in xonalar)
             jami_sigim = v["jami_sigim"]
             emoji = tur_emoji.get(v["tur"], "🔹")
-            izoh = tur_izoh.get(v["tur"], "")
+            if v["tur"] == "ortiqcha":
+                ort = -v["ortiqcha"]
+                izoh = f" ({jami_sigim} kishilik xona, {ort} kishi ortiqcha)"
+            elif v["tur"] == "kombinatsiya":
+                izoh = " (bir necha xona)"
+            else:
+                izoh = ""
             narx_str = format_narx(jami_narx)
             
             matn += f"{emoji} {xona_nomi} — {jami_sigim}👤 — {narx_str} som{izoh}\n"
