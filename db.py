@@ -481,12 +481,46 @@ def xonaga_joylashtir(xona_id, xona_nomi, ism, telefon, kishi, sana, kunlar, bro
 
 def joylash_guruh(xona_royxat, ism, telefon, kishi, sana, kunlar, bron_id=""):
     """Bir nechta xonani BITTA guruh sifatida joylashtirish.
-    xona_royxat = [(xona_id, xona_nomi), ...]
+    xona_royxat = [(xona_id, xona_nomi), ...] yoki [(xona_id, xona_nomi, kishi), ...]
+    Agar uchinchi element (kishi) berilsa - har xonaga o'sha kishi soni yoziladi.
+    Aks holda umumiy kishi sig'imga qarab taqsimlanadi.
     Hammasi bitta guruh_id oladi - birga chiqadi/o'zgaradi."""
     guruh_id = guruh_id_yarat()
-    for xid, xnomi in xona_royxat:
-        xonaga_joylashtir(xid, xnomi, ism, telefon, kishi, sana, kunlar, bron_id, guruh_id)
+    # Har xona uchun kishi sonini aniqlash
+    if xona_royxat and len(xona_royxat[0]) >= 3:
+        # Har xona uchun kishi berilgan
+        for item in xona_royxat:
+            xid, xnomi, xkishi = item[0], item[1], item[2]
+            xonaga_joylashtir(xid, xnomi, ism, telefon, xkishi, sana, kunlar, bron_id, guruh_id)
+    else:
+        # Umumiy kishini sig'imga qarab taqsimlash
+        taqsim = _kishi_taqsimla(xona_royxat, kishi)
+        for (xid, xnomi), xkishi in zip(xona_royxat, taqsim):
+            xonaga_joylashtir(xid, xnomi, ism, telefon, xkishi, sana, kunlar, bron_id, guruh_id)
     return guruh_id
+
+
+def _kishi_taqsimla(xona_royxat, jami_kishi):
+    """Umumiy kishini xonalar sig'imiga qarab taqsimlaydi.
+    Avval har xonani sig'imigacha to'ldiradi, ortiqchasini oxirgi xonaga qo'shadi."""
+    conn = get_db()
+    sigimlar = []
+    for item in xona_royxat:
+        xid = item[0]
+        r = conn.execute("SELECT sigim FROM xonalar WHERE id=?", (xid,)).fetchone()
+        sigimlar.append(r["sigim"] if r else 1)
+    conn.close()
+    taqsim = [0] * len(xona_royxat)
+    qolgan = jami_kishi
+    # Avval sig'imgacha to'ldirish
+    for i, s in enumerate(sigimlar):
+        olinadi = min(s, qolgan)
+        taqsim[i] = olinadi
+        qolgan -= olinadi
+    # Ortiqcha qolsa - oxirgi xonaga qo'shish
+    if qolgan > 0 and taqsim:
+        taqsim[-1] += qolgan
+    return taqsim
 
 
 def chiqish_qil(joylashgan_id):
