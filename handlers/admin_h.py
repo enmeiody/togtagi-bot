@@ -399,6 +399,31 @@ def register(bot):
         _joyla_qosh_xona(bot, call.message.chat.id, call.from_user.id, edit_msg=call.message.message_id)
         bot.answer_callback_query(call.id)
 
+    @bot.callback_query_handler(func=lambda c: c.data == "TB_NARX_AVTO")
+    def cb_tb_narx_avto(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        st = astate.get(call.from_user.id, {})
+        try:
+            bot.edit_message_text(f"✅ Avtomatik narx: {format_narx(st['ab']['narx'])} so'm",
+                                  call.message.chat.id, call.message.message_id)
+        except: pass
+        _tb_yakunla(bot, call.message.chat.id, call.from_user.id, st)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data == "JOYLA_NARX_AVTO")
+    def cb_joyla_narx_avto(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        st = astate.get(call.from_user.id, {})
+        narx = st.get("joyla_avto_narx", 0)
+        try:
+            bot.edit_message_text(f"✅ Avtomatik narx: {format_narx(narx)} so'm",
+                                  call.message.chat.id, call.message.message_id)
+        except: pass
+        _joyla_yakunla(bot, call.message.chat.id, call.from_user.id, st, narx)
+        bot.answer_callback_query(call.id)
+
     @bot.callback_query_handler(func=lambda c: c.data == "JOYLA_QOSH_TASDIQ")
     def cb_joyla_qosh_tasdiq(call):
         if not is_admin(call.from_user.id): return
@@ -1406,6 +1431,69 @@ def register(bot):
 
 # ===== YORDAMCHI FUNKSIYALAR =====
 
+def _tb_yakunla(bot, cid, uid, st):
+    """Tezkor bronni narx bilan yakunlash"""
+    from handlers.astate import astate
+    from db import get_db, bron_id_gen, tugash_sanasi, band_qil, format_narx as fn
+    ab = st["ab"]
+    bid = bron_id_gen()
+    tugash = tugash_sanasi(ab["sana"], ab["kunlar"])
+    conn = get_db()
+    conn.execute("""INSERT INTO bronlar (id,ism,telefon,sana,kunlar,kishi,xona,narx,holat,user_id,username,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (bid, ab["ism"], ab.get("telefon", ""), ab["sana"], ab["kunlar"], ab["kishi"],
+         ab["xona_nomi"], ab["narx"], "tasdiqlangan",
+         DIRECTOR_IDS[0], "admin", datetime.now(TZ).strftime("%d.%m.%Y %H:%M")))
+    for xid in ab["xona_ids"]:
+        conn.execute("INSERT OR IGNORE INTO bron_xonalar VALUES (?,?)", (bid, xid))
+    conn.commit(); conn.close()
+    for xid in ab["xona_ids"]:
+        band_qil(xid, ab["sana"], ab["kunlar"], bid)
+    havola = f"t.me/togtagi_bot?start=bron_{bid}"
+    bot.send_message(cid,
+        f"✅ Bron #{bid} qo'shildi!\n{ab['xona_nomi']} | {ab['sana']}-{tugash}\n"
+        f"👥 {ab['kishi']} kishi | 💰 {fn(ab['narx'])} so'm\n\nMijozga yuboring:\n{havola}",
+        reply_markup=admin_kb(uid))
+    tel = ab.get("telefon", "")
+    try:
+        conn2 = get_db()
+        all_m = conn2.execute("SELECT * FROM mijozlar").fetchall()
+        conn2.close()
+        for mm in all_m:
+            if mm["telefon"] and str(mm["telefon"])[-9:] == tel[-9:] and mm["user_id"]:
+                bot.send_message(mm["user_id"],
+                    f"Broningiz tasdiqlandi! #{bid}\n{ab['xona_nomi']}\n{ab['sana']}-{tugash}\n{fn(ab['narx'])} so'm")
+                break
+    except: pass
+    astate.pop(uid, None)
+
+
+def _joyla_yakunla(bot, cid, uid, st, narx):
+    """Joylashni narx bilan yakunlash"""
+    from handlers.astate import astate
+    from db import get_xonalar, joylash_guruh, get_db, tugash_sanasi, format_narx as fn
+    kishi = st.get("joyla_kishi", 1)
+    sana = st.get("joyla_sana", datetime.now(TZ).strftime("%d.%m.%Y"))
+    kunlar = st.get("joyla_kunlar", 1)
+    tel = st.get("joyla_tel", "")
+    ism = st.get("joyla_ism", "")
+    xona_ids = st.get("joyla_xona_ids", [st.get("joyla_xid")])
+    barcha_x = {x["id"]: x for x in get_xonalar()}
+    xona_royxat = [(xid, barcha_x[xid]["nomi"]) for xid in xona_ids if xid in barcha_x]
+    gid = joylash_guruh(xona_royxat, ism, tel, kishi, sana, kunlar)
+    conn = get_db()
+    conn.execute("UPDATE joylashgan SET narx=? WHERE guruh_id=?", (narx, gid))
+    conn.commit()
+    conn.close()
+    astate.pop(uid, None)
+    tugash = tugash_sanasi(sana, kunlar)
+    xonalar_str = ", ".join(x[1] for x in xona_royxat)
+    bot.send_message(cid,
+        f"✅ Joylashtirildi!\n\n🛏 {xonalar_str}\n👤 {ism} | 📞 {tel}\n"
+        f"👥 {kishi} kishi\n📅 {sana} - {tugash}\n💰 {fn(narx)} so'm",
+        reply_markup=admin_kb(uid))
+
+
 def _xona_boshatish_royxat(bot, cid, xid, edit_msg=None):
     """Xonadagi joylashgan + bronlarni tugma qilib ko'rsatadi - bosilganda bo'shatadi"""
     from telebot import types
@@ -1649,31 +1737,33 @@ def admin_matn_handler(bot, msg, uid, text, astate):
         return
 
     if step == "joyla_tel":
-        from db import joylash_guruh, get_xonalar, narx_hisobla, guruh_narx_hisobla, tolov_qosh
+        from db import get_xonalar, guruh_narx_hisobla
         kishi = st.get("joyla_kishi", 1)
-        sana = st.get("joyla_sana", datetime.now(TZ).strftime("%d.%m.%Y"))
         kunlar = st.get("joyla_kunlar", 1)
-        # Bir yoki bir nechta xona
         xona_ids = st.get("joyla_xona_ids", [st["joyla_xid"]])
         barcha_x = {x["id"]: x for x in get_xonalar()}
-        xona_royxat = [(xid, barcha_x[xid]["nomi"]) for xid in xona_ids if xid in barcha_x]
         xona_obj = [barcha_x[xid] for xid in xona_ids if xid in barcha_x]
-        # Narx hisobi
-        narx = guruh_narx_hisobla(xona_obj, kishi, kunlar)
-        # Guruh bilan joylashtirish
-        gid = joylash_guruh(xona_royxat, st["joyla_ism"], text, kishi, sana, kunlar)
-        # joylashgan yozuvlarga narx yozish
-        conn = get_db()
-        conn.execute("UPDATE joylashgan SET narx=? WHERE guruh_id=?", (narx, gid))
-        conn.commit()
-        conn.close()
-        astate.pop(uid, None)
-        tugash = tugash_sanasi(sana, kunlar)
-        xonalar_str = ", ".join(x[1] for x in xona_royxat)
+        avto_narx = guruh_narx_hisobla(xona_obj, kishi, kunlar)
+        st["joyla_tel"] = text
+        st["joyla_avto_narx"] = avto_narx
+        st["step"] = "joyla_narx"
+        astate[uid] = st
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton(f"✅ Avtomatik: {format_narx(avto_narx)} so'm", callback_data="JOYLA_NARX_AVTO"))
         bot.send_message(cid,
-            f"✅ Joylashtirildi!\n\n🛏 {xonalar_str}\n👤 {st['joyla_ism']} | 📞 {text}\n"
-            f"👥 {kishi} kishi\n📅 {sana} - {tugash}\n💰 {format_narx(narx)} so'm",
-            reply_markup=admin_kb(uid))
+            f"💰 Avtomatik hisoblangan narx: {format_narx(avto_narx)} so'm\n\n"
+            f"Shu narxni tasdiqlang yoki boshqa summani yozing:",
+            reply_markup=kb)
+        return
+
+    if step == "joyla_narx":
+        # Admin boshqa narx kiritdi
+        try:
+            narx = int(text.replace(" ", "").replace(",", "").replace("so'm", "").replace("som", "").strip())
+        except:
+            bot.send_message(cid, "⚠️ Faqat raqam kiriting yoki avtomatik tugmani bosing")
+            return
+        _joyla_yakunla(bot, cid, uid, st, narx)
         return
 
     if step == "joyla_ism":
@@ -1703,35 +1793,27 @@ def admin_matn_handler(bot, msg, uid, text, astate):
 
     if step == "tb_tel":
         ab = st["ab"]
-        bid = bron_id_gen()
-        tugash = tugash_sanasi(ab["sana"], ab["kunlar"])
-        conn = get_db()
-        conn.execute("""INSERT INTO bronlar (id,ism,telefon,sana,kunlar,kishi,xona,narx,holat,user_id,username,created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (bid, ab["ism"], text, ab["sana"], ab["kunlar"], ab["kishi"],
-             ab["xona_nomi"], ab["narx"], "tasdiqlangan",
-             DIRECTOR_IDS[0], "admin", datetime.now().strftime("%d.%m.%Y %H:%M")))
-        for xid in ab["xona_ids"]:
-            conn.execute("INSERT OR IGNORE INTO bron_xonalar VALUES (?,?)", (bid, xid))
-        conn.commit(); conn.close()
-        for xid in ab["xona_ids"]:
-            band_qil(xid, ab["sana"], ab["kunlar"], bid)
-        havola = f"t.me/togtagi_bot?start=bron_{bid}"
+        ab["telefon"] = text
+        st["ab"] = ab
+        st["step"] = "tb_narx"
+        astate[uid] = st
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton(f"✅ Avtomatik: {format_narx(ab['narx'])} so'm", callback_data="TB_NARX_AVTO"))
         bot.send_message(cid,
-            f"✅ Bron #{bid} qoshildi!\n{ab['xona_nomi']} | {ab['sana']}-{tugash}\n"
-            f"{format_narx(ab['narx'])} som\n\nMijozga yuboring:\n{havola}",
-            reply_markup=admin_kb(uid))
+            f"💰 Avtomatik narx: {format_narx(ab['narx'])} so'm\n\n"
+            f"Shu narxni tasdiqlang yoki boshqa summani yozing:",
+            reply_markup=kb)
+        return
+
+    if step == "tb_narx":
         try:
-            conn2 = get_db()
-            all_m = conn2.execute("SELECT * FROM mijozlar").fetchall()
-            conn2.close()
-            for mm in all_m:
-                if mm["telefon"] and str(mm["telefon"])[-9:] == text[-9:] and mm["user_id"]:
-                    bot.send_message(mm["user_id"],
-                        f"Broningiz tasdiqlandi! #{bid}\n{ab['xona_nomi']}\n{ab['sana']}-{tugash}\n{format_narx(ab['narx'])} som")
-                    break
-        except: pass
-        astate.pop(uid, None)
+            narx = int(text.replace(" ", "").replace(",", "").replace("so'm", "").replace("som", "").strip())
+        except:
+            bot.send_message(cid, "⚠️ Faqat raqam kiriting yoki avtomatik tugmani bosing")
+            return
+        st["ab"]["narx"] = narx
+        astate[uid] = st
+        _tb_yakunla(bot, cid, uid, st)
         return
 
     if step == "mijoz_qidir":
