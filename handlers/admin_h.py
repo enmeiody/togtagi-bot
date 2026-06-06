@@ -1379,6 +1379,16 @@ def register(bot):
         bot.answer_callback_query(call.id, "Bron bekor qilindi!")
         _xona_boshatish_royxat(bot, call.message.chat.id, xid, call.message.message_id)
 
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("XONATOZA_"))
+    def cb_xonatoza(call):
+        """Xonani butunlay tozalash (orphan band ham)"""
+        if not is_admin(call.from_user.id): return
+        xid = int(call.data.replace("XONATOZA_", ""))
+        from db import xona_toliq_tozala
+        xona_toliq_tozala(xid)
+        bot.answer_callback_query(call.id, "Xona butunlay tozalandi!")
+        _xona_boshatish_royxat(bot, call.message.chat.id, xid, call.message.message_id)
+
     @bot.callback_query_handler(func=lambda c: c.data.startswith("AXRASM_"))
     def cb_axrasm(call):
         if not is_admin(call.from_user.id): return
@@ -1924,7 +1934,8 @@ def _axbron_yakunla(bot, cid, uid, st, narx):
 
 
 def _xona_boshatish_royxat(bot, cid, xid, edit_msg=None):
-    """Xonadagi joylashgan + bronlarni tugma qilib ko'rsatadi - bosilganda bo'shatadi"""
+    """Xonadagi joylashgan + bronlarni tugma qilib ko'rsatadi - bosilganda bo'shatadi.
+    Orphan band (egasiz band) ham aniqlanadi - to'liq tozalash imkoni bilan."""
     from telebot import types
     from db import get_db, tugash_sanasi
     conn = get_db()
@@ -1942,6 +1953,8 @@ def _xona_boshatish_royxat(bot, cid, xid, edit_msg=None):
             (r["bron_id"],)).fetchone()
         if b:
             bronlar.append(b)
+    # Band yozuvlar soni (orphan tekshirish uchun)
+    band_soni = conn.execute("SELECT COUNT(*) FROM band WHERE xona_id=?", (xid,)).fetchone()[0]
     conn.close()
 
     matn = f"🔓 {xnomi} - BO'SHATISH\n{'─'*22}\n\n"
@@ -1967,8 +1980,19 @@ def _xona_boshatish_royxat(bot, cid, xid, edit_msg=None):
                 callback_data=f"BOSHBRON_{b['id']}_{xid}"))
         matn += "\n"
 
-    if not joylar and not bronlar:
-        matn += "✅ Bu xona allaqachon bo'sh.\nHech qanday bron yoki mehmon yo'q."
+    # Orphan band: band bor, lekin joylashgan/bron ko'rinmaydi
+    korinadigan = len(joylar) + len(bronlar)
+    if band_soni > 0 and korinadigan == 0:
+        matn += ("⚠️ Bu xonada egasi aniqlanmagan band yozuvlari bor "
+                 "(eski yoki bekor qilingan). Pastdagi tugma bilan tozalang.\n\n")
+
+    if not joylar and not bronlar and band_soni == 0:
+        matn += "✅ Bu xona allaqachon bo'sh."
+
+    # To'liq tozalash - har doim mavjud (orphan band ni ham tozalaydi)
+    if band_soni > 0 or joylar or bronlar:
+        kb.add(types.InlineKeyboardButton(
+            "🧹 Xonani BUTUNLAY tozalash", callback_data=f"XONATOZA_{xid}"))
 
     kb.add(types.InlineKeyboardButton("🔙 Orqaga", callback_data=f"AX_{xid}"))
 
