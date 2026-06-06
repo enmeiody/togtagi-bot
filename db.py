@@ -136,6 +136,13 @@ def init_db():
         kalit TEXT PRIMARY KEY,
         qiymat TEXT
     );
+    CREATE TABLE IF NOT EXISTS xarajatlar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        summa INTEGER,
+        izoh TEXT,
+        sana TEXT,
+        admin_id INTEGER
+    );
     """)
 
     # Migrations
@@ -524,7 +531,8 @@ def _kishi_taqsimla(xona_royxat, jami_kishi):
 
 
 def chiqish_qil(joylashgan_id):
-    """Bitta yozuvni chiqarish - lekin guruhdagi BARCHA xonalarni birga chiqaradi."""
+    """Bitta yozuvni chiqarish - guruhdagi BARCHA xonalarni birga chiqaradi.
+    band jadvalini xona_id bo'yicha to'liq tozalaydi (bron orqali kelgan bo'lsa ham)."""
     conn = get_db()
     j = conn.execute("SELECT * FROM joylashgan WHERE id=?", (joylashgan_id,)).fetchone()
     if not j:
@@ -532,21 +540,38 @@ def chiqish_qil(joylashgan_id):
         return None
     guruh_id = j["guruh_id"]
     if guruh_id:
-        # Guruhdagi barcha xonalarni chiqarish
         guruh_yozuvlar = conn.execute(
             "SELECT * FROM joylashgan WHERE guruh_id=? AND holat='joylashgan'",
             (guruh_id,)).fetchall()
-        for gy in guruh_yozuvlar:
-            conn.execute("UPDATE joylashgan SET holat='chiqdi' WHERE id=?", (gy["id"],))
-            # band dan o'chirish (guruh_id orqali)
-            conn.execute("DELETE FROM band WHERE bron_id=? AND xona_id=?", (guruh_id, gy["xona_id"]))
-        conn.execute("DELETE FROM band WHERE bron_id=?", (guruh_id,))
     else:
-        # Eski yozuvlar uchun (guruh_id yo'q)
-        conn.execute("UPDATE joylashgan SET holat='chiqdi' WHERE id=?", (joylashgan_id,))
-        bid = j["bron_id"] or f"joylashgan_{j['xona_id']}"
-        conn.execute("DELETE FROM band WHERE bron_id=?", (bid,))
-        conn.execute("DELETE FROM band WHERE xona_id=?", (j["xona_id"],))
+        guruh_yozuvlar = [j]
+
+    bron_idlar = set()
+    for gy in guruh_yozuvlar:
+        conn.execute("UPDATE joylashgan SET holat='chiqdi' WHERE id=?", (gy["id"],))
+        # band ni shu xonaning shu mehmon sanalarida tozalash
+        # Eng ishonchli: xona + sana oralig'i bo'yicha
+        try:
+            bosh = datetime.strptime(gy["sana"], "%d.%m.%Y").date()
+            oxir = datetime.strptime(gy["tugash"], "%d.%m.%Y").date()
+            kun = (oxir - bosh).days + 1
+            for i in range(kun + 1):
+                sana_i = (bosh + timedelta(days=i)).strftime("%d.%m.%Y")
+                conn.execute("DELETE FROM band WHERE xona_id=? AND sana=?", (gy["xona_id"], sana_i))
+        except:
+            pass
+        # guruh_id va bron_id bo'yicha ham tozalash
+        if guruh_id:
+            conn.execute("DELETE FROM band WHERE bron_id=? AND xona_id=?", (guruh_id, gy["xona_id"]))
+        if gy["bron_id"]:
+            bron_idlar.add(gy["bron_id"])
+            conn.execute("DELETE FROM band WHERE bron_id=? AND xona_id=?", (gy["bron_id"], gy["xona_id"]))
+    if guruh_id:
+        conn.execute("DELETE FROM band WHERE bron_id=?", (guruh_id,))
+    # Tegishli bronlarni 'chiqgan' qilish
+    for bid in bron_idlar:
+        if bid:
+            conn.execute("UPDATE bronlar SET holat='chiqgan' WHERE id=?", (bid,))
     conn.commit()
     conn.close()
     return guruh_id
@@ -1246,3 +1271,54 @@ def kunlik_daromad(sana):
         if r["sana"] and r["sana"].split()[0] == sana:
             jami += r["summa"] or 0
     return jami
+
+
+# ===== XARAJAT (RASXOD) =====
+def xarajat_qosh(summa, izoh, admin_id=None):
+    conn = get_db()
+    conn.execute("INSERT INTO xarajatlar (summa, izoh, sana, admin_id) VALUES (?,?,?,?)",
+                 (summa, izoh, datetime.now(TZ).strftime("%d.%m.%Y %H:%M"), admin_id))
+    conn.commit()
+    conn.close()
+
+
+def xarajat_hisobot(bosh_sana=None, oxir_sana=None):
+    """Davr bo'yicha jami xarajat"""
+    conn = get_db()
+    rows = conn.execute("SELECT summa, sana FROM xarajatlar").fetchall()
+    conn.close()
+    if not (bosh_sana and oxir_sana):
+        return sum(r["summa"] or 0 for r in rows)
+    jami = 0
+    b = datetime.strptime(bosh_sana, "%d.%m.%Y").date()
+    o = datetime.strptime(oxir_sana, "%d.%m.%Y").date()
+    for r in rows:
+        try:
+            d = datetime.strptime(r["sana"].split()[0], "%d.%m.%Y").date()
+            if b <= d <= o:
+                jami += r["summa"] or 0
+        except:
+            pass
+    return jami
+
+
+def xarajat_royxat(limit=20):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM xarajatlar ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return rows
+
+
+def daromad_tozalash():
+    """Barcha to'lov yozuvlarini o'chirish (daromad hisobini noldan boshlash)"""
+    conn = get_db()
+    conn.execute("DELETE FROM tolovlar")
+    conn.commit()
+    conn.close()
+
+
+def xarajat_tozalash():
+    conn = get_db()
+    conn.execute("DELETE FROM xarajatlar")
+    conn.commit()
+    conn.close()
