@@ -1322,3 +1322,27 @@ def xarajat_tozalash():
     conn.execute("DELETE FROM xarajatlar")
     conn.commit()
     conn.close()
+
+
+def xona_toliq_tozala(xid):
+    """Xonadagi BARCHA narsani tozalaydi: band, faol joylashganlar, va shu xonaga
+    bog'liq tasdiqlanmagan/kutilayotgan bronlar. Orphan band uchun ishonchli yechim."""
+    conn = get_db()
+    # Faol joylashganlarni chiqdi qilish
+    conn.execute("UPDATE joylashgan SET holat='chiqdi' WHERE xona_id=? AND holat='joylashgan'", (xid,))
+    # Shu xonaga bog'liq bronlarni topib, agar boshqa xonasi bo'lmasa bekor qilish
+    bids = conn.execute("SELECT DISTINCT bron_id FROM bron_xonalar WHERE xona_id=?", (xid,)).fetchall()
+    for r in bids:
+        bid = r["bron_id"]
+        b = conn.execute("SELECT holat FROM bronlar WHERE id=?", (bid,)).fetchone()
+        if b and b["holat"] in ("kutilmoqda", "tasdiqlangan"):
+            # Shu bronning boshqa xonalari bormi
+            boshqa = conn.execute(
+                "SELECT COUNT(*) FROM bron_xonalar WHERE bron_id=? AND xona_id!=?", (bid, xid)).fetchone()[0]
+            if boshqa == 0:
+                conn.execute("UPDATE bronlar SET holat='bekor' WHERE id=?", (bid,))
+            conn.execute("DELETE FROM bron_xonalar WHERE bron_id=? AND xona_id=?", (bid, xid))
+    # Barcha band yozuvlarini o'chirish (orphan ham)
+    conn.execute("DELETE FROM band WHERE xona_id=?", (xid,))
+    conn.commit()
+    conn.close()
