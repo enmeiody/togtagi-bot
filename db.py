@@ -601,7 +601,8 @@ def guruh_olish(guruh_id):
 
 
 def mehmon_kochir(joylashgan_id, yangi_xona_id, yangi_xona_nomi):
-    """Mehmonni boshqa xonaga ko'chirish. Yangi xona band bo'lsa ko'chirmaydi.
+    """Mehmonni boshqa xonaga ko'chirish. Guruh_id saqlanadi (guruh buzilmaydi).
+    Eski xona band'i sana oralig'i bo'yicha TO'LIQ tozalanadi (bron_id ga qaramay).
     Qaytaradi: (ok: bool, xabar: str)"""
     conn = get_db()
     j = conn.execute("SELECT * FROM joylashgan WHERE id=?", (joylashgan_id,)).fetchone()
@@ -614,39 +615,47 @@ def mehmon_kochir(joylashgan_id, yangi_xona_id, yangi_xona_nomi):
         return False, "Bu allaqachon shu xona"
     guruh_id = j["guruh_id"] or j["bron_id"] or f"joylashgan_{eski_xona}"
 
-    # Bu mehmonning shu xonadagi sanalari
-    eski_band = conn.execute("SELECT sana FROM band WHERE xona_id=? AND bron_id=?",
-                             (eski_xona, guruh_id)).fetchall()
-    sanalar = [b["sana"] for b in eski_band]
-    if not sanalar:
-        # band yo'q bo'lsa joylashgan sana-tugash dan hisoblash
-        try:
-            bosh = datetime.strptime(j["sana"], "%d.%m.%Y").date()
-            oxir = datetime.strptime(j["tugash"], "%d.%m.%Y").date()
-            kun = (oxir - bosh).days
-            sanalar = [(bosh + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(kun)]
-        except:
-            sanalar = []
+    # Mehmonning sana oralig'i (sana ... tugash, tugash kuni ham)
+    try:
+        bosh = datetime.strptime(j["sana"], "%d.%m.%Y").date()
+        oxir = datetime.strptime(j["tugash"], "%d.%m.%Y").date()
+        kun = (oxir - bosh).days
+        sanalar = [(bosh + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(kun + 1)]
+    except:
+        # Zaxira: band dan
+        eski_band = conn.execute("SELECT sana FROM band WHERE xona_id=? AND bron_id=?",
+                                 (eski_xona, guruh_id)).fetchall()
+        sanalar = [b["sana"] for b in eski_band]
 
-    # Yangi xona shu sanalarda band emasligini tekshirish (o'zinikidan tashqari)
+    # Yangi xona shu sanalarda bo'shmi (o'zinikidan tashqari) — chiqish kuni qoidasi bilan
     for s in sanalar:
-        band = conn.execute(
-            "SELECT bron_id FROM band WHERE xona_id=? AND sana=? AND bron_id!=?",
-            (yangi_xona_id, s, guruh_id)).fetchone()
-        if band:
-            conn.close()
-            return False, f"{yangi_xona_nomi} {s} sanada band — ko'chirib bo'lmaydi"
+        row = conn.execute("SELECT bron_id FROM band WHERE xona_id=? AND sana=?",
+                           (yangi_xona_id, s)).fetchone()
+        if row and row["bron_id"] and row["bron_id"] != guruh_id:
+            bid = row["bron_id"]
+            # Chiqish kuni bo'lsa to'siq emas
+            ertaga = (datetime.strptime(s, "%d.%m.%Y") + timedelta(days=1)).strftime("%d.%m.%Y")
+            keyingi = conn.execute("SELECT 1 FROM band WHERE xona_id=? AND sana=? AND bron_id=?",
+                                   (yangi_xona_id, ertaga, bid)).fetchone()
+            if keyingi:  # ertaga ham band - haqiqiy to'siq
+                conn.close()
+                return False, f"{yangi_xona_nomi} {s} sanada band — ko'chirib bo'lmaydi"
 
-    # Ko'chirish
+    # 1. joylashgan yozuvni yangilash (guruh_id O'ZGARMAYDI - guruh saqlanadi)
     conn.execute("UPDATE joylashgan SET xona_id=?, xona_nomi=? WHERE id=?",
                  (yangi_xona_id, yangi_xona_nomi, joylashgan_id))
-    conn.execute("DELETE FROM band WHERE xona_id=? AND bron_id=?", (eski_xona, guruh_id))
+
+    # 2. Eski xonadan shu sanalardagi band'ni TO'LIQ o'chirish (bron_id ga qaramay)
+    #    (bir xona bir vaqtda bitta mehmonники, shuning uchun xavfsiz)
     for s in sanalar:
-        try:
-            conn.execute("INSERT OR REPLACE INTO band (xona_id,sana,bron_id) VALUES (?,?,?)",
-                        (yangi_xona_id, s, guruh_id))
-        except: pass
-    # Eski xonani iflos deb belgilash
+        conn.execute("DELETE FROM band WHERE xona_id=? AND sana=?", (eski_xona, s))
+
+    # 3. Yangi xonaga band qo'shish (guruh_id bilan)
+    for s in sanalar:
+        conn.execute("INSERT OR REPLACE INTO band (xona_id,sana,bron_id) VALUES (?,?,?)",
+                    (yangi_xona_id, s, guruh_id))
+
+    # 4. Eski xonani iflos belgilash
     conn.execute("UPDATE xonalar SET tozalik='iflos' WHERE id=?", (eski_xona,))
     conn.commit()
     conn.close()
