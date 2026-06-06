@@ -137,7 +137,8 @@ def xona_detail_kb(xid, bino_id, yopiq=0):
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
         types.InlineKeyboardButton("📅 Bronlar", callback_data=f"AXB_{xid}"),
-        types.InlineKeyboardButton("🔴 Band qilish", callback_data=f"AXBAND_{xid}"),
+        types.InlineKeyboardButton("🏠 Joylash", callback_data=f"AXJOY_{xid}"),
+        types.InlineKeyboardButton("🔴 Bron qilish", callback_data=f"AXBAND_{xid}"),
         types.InlineKeyboardButton("🟢 Bosh qilish", callback_data=f"AXBOSH_{xid}"),
         types.InlineKeyboardButton("📸 Rasmlar", callback_data=f"AXRASM_{xid}"),
         types.InlineKeyboardButton("🎥 Videolar", callback_data=f"AXVIDEO_{xid}"),
