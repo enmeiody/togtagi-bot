@@ -139,9 +139,65 @@ def register(bot):
     def cb_chiqtasdiq(call):
         if not is_admin(call.from_user.id): return
         jid = int(call.data.replace("CHIQTASDIQ_", ""))
-        chiqish_qil(jid)  # Guruhdagi HAMMA xona birga chiqadi
+        from db import erta_ketish_hisobi
+        erta = erta_ketish_hisobi(jid)
+        if erta:
+            # Erta ketmoqda - yangi narxni ko'rsatib tasdiqlatish
+            from handlers.astate import astate
+            astate[call.from_user.id] = {"step": "erta_ketish", "erta": erta, "jid": jid}
+            kb = types.InlineKeyboardMarkup(row_width=1)
+            kb.add(
+                types.InlineKeyboardButton(
+                    f"✅ Yangi narx: {format_narx(erta['yangi_narx'])} so'm", callback_data="ERTA_YANGI"),
+                types.InlineKeyboardButton(
+                    f"💯 To'liq narx: {format_narx(erta['eski_narx'])} so'm", callback_data="ERTA_TOLIQ"),
+            )
+            bot.edit_message_text(
+                f"⏰ ERTA KETISH\n\n"
+                f"Rejada: {erta['rejal_kun']} kun\n"
+                f"Haqiqiy: {erta['haqiqiy_kun']} kun turdi\n\n"
+                f"To'liq narx: {format_narx(erta['eski_narx'])} so'm\n"
+                f"Qayta hisob: {format_narx(erta['yangi_narx'])} so'm\n\n"
+                f"Qaysi summani olamiz? (yoki boshqa summa yozing)",
+                call.message.chat.id, call.message.message_id, reply_markup=kb)
+            bot.answer_callback_query(call.id)
+            return
+        # Oddiy chiqish
+        chiqish_qil(jid)
         bot.edit_message_text("✅ Chiqish qayd qilindi! Barcha xonalar bo'shatildi.",
                               call.message.chat.id, call.message.message_id)
+        bot.answer_callback_query(call.id, "Chiqdi!")
+
+    @bot.callback_query_handler(func=lambda c: c.data == "ERTA_YANGI")
+    def cb_erta_yangi(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        from db import chiqish_narx_yangila
+        st = astate.get(call.from_user.id, {})
+        erta = st.get("erta")
+        if erta:
+            if erta["guruh_id"]:
+                chiqish_narx_yangila(erta["guruh_id"], erta["yangi_narx"])
+            chiqish_qil(erta["joylashgan_id"])
+            bot.edit_message_text(
+                f"✅ Chiqdi! Qayta hisoblangan narx: {format_narx(erta['yangi_narx'])} so'm\n"
+                f"({erta['haqiqiy_kun']} kun turdi)",
+                call.message.chat.id, call.message.message_id)
+        astate.pop(call.from_user.id, None)
+        bot.answer_callback_query(call.id, "Chiqdi!")
+
+    @bot.callback_query_handler(func=lambda c: c.data == "ERTA_TOLIQ")
+    def cb_erta_toliq(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        st = astate.get(call.from_user.id, {})
+        erta = st.get("erta")
+        if erta:
+            chiqish_qil(erta["joylashgan_id"])
+            bot.edit_message_text(
+                f"✅ Chiqdi! To'liq narx saqlandi: {format_narx(erta['eski_narx'])} so'm",
+                call.message.chat.id, call.message.message_id)
+        astate.pop(call.from_user.id, None)
         bot.answer_callback_query(call.id, "Chiqdi!")
 
     @bot.callback_query_handler(func=lambda c: c.data == "CHIQBEKOR")
@@ -312,13 +368,30 @@ def register(bot):
             "joyla_xnomi": x["nomi"],
             "joyla_sana": bugun  # Avtomatik bugun
         }
-        # Inline keyboard - raqamlarni bosish orqali
+        # Inline keyboard - raqamlarni bosish orqali (1-20 + qo'lda)
         kb = types.InlineKeyboardMarkup(row_width=5)
-        btns = [types.InlineKeyboardButton(str(i), callback_data=f"JOYLA_KISHI_{xid}_{i}") for i in range(1, 11)]
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"JOYLA_KISHI_{xid}_{i}") for i in range(1, 21)]
         kb.add(*btns)
+        kb.add(types.InlineKeyboardButton("✏️ Qo'lda kiritish (20+)", callback_data=f"JOYLA_KISHIQOL_{xid}"))
         xnomi_str = x["nomi"]
         joyla_matn = "Xona: " + xnomi_str + " | Bugun: " + bugun + "\n\nNechta kishi?"
         bot.send_message(call.message.chat.id, joyla_matn, reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data.startswith("JOYLA_KISHIQOL_"))
+    def cb_joyla_kishiqol(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        xid = int(call.data.replace("JOYLA_KISHIQOL_", ""))
+        bugun = datetime.now(TZ).strftime("%d.%m.%Y")
+        conn = get_db()
+        x = conn.execute("SELECT * FROM xonalar WHERE id=?", (xid,)).fetchone()
+        conn.close()
+        astate[call.from_user.id] = {
+            "step": "joyla_kishi_qol", "joyla_xid": xid, "joyla_xnomi": x["nomi"],
+            "joyla_xona_ids": [xid], "joyla_sana": bugun, "joyla_sigim": x["sigim"]
+        }
+        bot.send_message(call.message.chat.id, "✏️ Nechta kishi? (son kiriting, masalan 25)")
         bot.answer_callback_query(call.id)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("JOYLA_KISHI_"))
@@ -583,10 +656,14 @@ def register(bot):
         from handlers.astate import astate
         astate[msg.from_user.id] = {"step": "tb_kishi", "ab": {}}
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
-        for i in range(1, 11):
-            kb.add(str(i))
+        row = []
+        for i in range(1, 21):
+            row.append(str(i))
+        kb.add(*row)
         kb.add("🔙 Admin menyu")
-        bot.send_message(msg.chat.id, "Tezkor bron\nNechta kishi?", reply_markup=kb)
+        bot.send_message(msg.chat.id,
+            "Tezkor bron\nNechta kishi? (tugmadan tanlang yoki istalgan sonni yozing)",
+            reply_markup=kb)
 
     # ===== GALEREYA =====
 
@@ -1272,10 +1349,21 @@ def register(bot):
         st["axbron_sana"] = sana
         astate[call.from_user.id] = st
         kb = types.InlineKeyboardMarkup(row_width=5)
-        btns = [types.InlineKeyboardButton(str(i), callback_data=f"AXBKISHI_{i}") for i in range(1, 11)]
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"AXBKISHI_{i}") for i in range(1, 21)]
         kb.add(*btns)
+        kb.add(types.InlineKeyboardButton("✏️ Qo'lda kiritish (20+)", callback_data="AXBKISHIQOL"))
         bot.edit_message_text(f"🔴 Bron | {st['axbron_xnomi']} | {sana}\n\nNechta kishi?",
                               call.message.chat.id, call.message.message_id, reply_markup=kb)
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda c: c.data == "AXBKISHIQOL")
+    def cb_axbkishiqol(call):
+        if not is_admin(call.from_user.id): return
+        from handlers.astate import astate
+        st = astate.get(call.from_user.id, {})
+        st["step"] = "axbron_kishi_qol"
+        astate[call.from_user.id] = st
+        bot.send_message(call.message.chat.id, "✏️ Nechta kishi? (son kiriting, masalan 25)")
         bot.answer_callback_query(call.id)
 
     @bot.callback_query_handler(func=lambda c: c.data.startswith("AXBKISHI_"))
@@ -2277,6 +2365,79 @@ def admin_matn_handler(bot, msg, uid, text, astate):
         return
 
     # ===== QABULXONA BRON (axbron) matn steplari =====
+    if step == "erta_ketish":
+        from db import chiqish_narx_yangila
+        try:
+            narx = int(text.replace(" ", "").replace(",", "").replace("so'm", "").replace("som", "").strip())
+        except:
+            bot.send_message(cid, "⚠️ Tugmani bosing yoki son kiriting")
+            return
+        erta = st.get("erta")
+        if erta:
+            if erta["guruh_id"]:
+                chiqish_narx_yangila(erta["guruh_id"], narx)
+            from db import chiqish_qil as cq
+            cq(erta["joylashgan_id"])
+            bot.send_message(cid,
+                f"✅ Chiqdi! Narx: {format_narx(narx)} so'm ({erta['haqiqiy_kun']} kun)",
+                reply_markup=admin_kb(uid))
+        astate.pop(uid, None)
+        return
+
+    if step == "joyla_kishi_qol":
+        try:
+            n = int(text.replace(" ", "").strip())
+            if n < 1 or n > 200: raise ValueError
+        except:
+            bot.send_message(cid, "⚠️ 1 dan 200 gacha son kiriting")
+            return
+        st["joyla_kishi"] = n
+        st["step"] = "joyla_kun"
+        astate[uid] = st
+        xnomi = st.get("joyla_xnomi", "")
+        sigim = st.get("joyla_sigim", 1)
+        kb = types.InlineKeyboardMarkup(row_width=5)
+        xid = st.get("joyla_xid")
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"JOYLA_KUN_{xid}_{i}") for i in range(1, 16)]
+        kb.add(*btns)
+        if n > sigim:
+            matn = f"Xona: {xnomi} ({sigim}👤)\n⚠️ {n} kishi - keyin qo'shimcha xona tanlaysiz.\n\nNecha kun?"
+        else:
+            matn = f"Xona: {xnomi} | {n} kishi\nNecha kun?"
+        bot.send_message(cid, matn, reply_markup=kb)
+        return
+
+    if step == "axbron_kishi_qol":
+        try:
+            n = int(text.replace(" ", "").strip())
+            if n < 1 or n > 200: raise ValueError
+        except:
+            bot.send_message(cid, "⚠️ 1 dan 200 gacha son kiriting")
+            return
+        st["axbron_kishi"] = n
+        st["step"] = "axbron"
+        astate[uid] = st
+        kb = types.InlineKeyboardMarkup(row_width=5)
+        btns = [types.InlineKeyboardButton(str(i), callback_data=f"AXBKUN_{i}") for i in range(1, 16)]
+        kb.add(*btns)
+        sigim = st.get("axbron_sigim", 1)
+        ogoh = f"\n⚠️ {n} kishi - keyin qo'shimcha xona" if n > sigim else ""
+        bot.send_message(cid, f"🔴 Bron | {n} kishi{ogoh}\n\nNecha kun?", reply_markup=kb)
+        return
+
+    if step == "tb_kishi_qol":
+        try:
+            n = int(text.replace(" ", "").strip())
+            if n < 1 or n > 200: raise ValueError
+        except:
+            bot.send_message(cid, "⚠️ 1 dan 200 gacha son kiriting")
+            return
+        st["ab"]["kishi"] = n
+        st["step"] = "tb_sana"
+        astate[uid] = st
+        bot.send_message(cid, f"👥 {n} kishi\n\nKelish sanasini tanlang:", reply_markup=sana_kb())
+        return
+
     if step == "axbron_ism":
         st["axbron_ism"] = text
         st["step"] = "axbron_tel"
