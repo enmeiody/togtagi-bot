@@ -1355,3 +1355,59 @@ def xona_toliq_tozala(xid):
     conn.execute("DELETE FROM band WHERE xona_id=?", (xid,))
     conn.commit()
     conn.close()
+
+
+def erta_ketish_hisobi(joylashgan_id):
+    """Mehmon erta ketsa, haqiqiy turilgan kunlar va yangi narxni hisoblaydi.
+    Qaytaradi: dict yoki None
+    {rejalashtirilgan_kun, haqiqiy_kun, eski_narx, yangi_narx, guruh_id}"""
+    conn = get_db()
+    j = conn.execute("SELECT * FROM joylashgan WHERE id=?", (joylashgan_id,)).fetchone()
+    if not j:
+        conn.close()
+        return None
+    guruh_id = j["guruh_id"]
+    bugun = datetime.now(TZ).date()
+    try:
+        bosh = datetime.strptime(j["sana"], "%d.%m.%Y").date()
+        tugash = datetime.strptime(j["tugash"], "%d.%m.%Y").date()
+    except:
+        conn.close()
+        return None
+    rejal_kun = (tugash - bosh).days or 1
+    # Haqiqiy turilgan kun: bugun - kelgan kun (kamida 1)
+    haqiqiy_kun = (bugun - bosh).days
+    if haqiqiy_kun < 1:
+        haqiqiy_kun = 1
+    if haqiqiy_kun >= rejal_kun:
+        conn.close()
+        return None  # Erta ketish yo'q (to'liq yoki ortiq turgan)
+
+    # Guruhdagi barcha xonalarning eski narxi
+    if guruh_id:
+        yozuvlar = conn.execute(
+            "SELECT * FROM joylashgan WHERE guruh_id=? AND holat='joylashgan'", (guruh_id,)).fetchall()
+    else:
+        yozuvlar = [j]
+    eski_narx = sum((y["narx"] or 0) for y in yozuvlar)
+    # Yangi narx: kun nisbatida
+    yangi_narx = int(round(eski_narx * haqiqiy_kun / rejal_kun))
+    conn.close()
+    return {
+        "rejal_kun": rejal_kun, "haqiqiy_kun": haqiqiy_kun,
+        "eski_narx": eski_narx, "yangi_narx": yangi_narx,
+        "guruh_id": guruh_id, "joylashgan_id": joylashgan_id
+    }
+
+
+def chiqish_narx_yangila(guruh_id, yangi_jami_narx):
+    """Erta ketishda guruh narxini yangilash (proporsional taqsim)"""
+    conn = get_db()
+    yozuvlar = conn.execute(
+        "SELECT id, narx FROM joylashgan WHERE guruh_id=? AND holat='joylashgan'", (guruh_id,)).fetchall()
+    eski_jami = sum((y["narx"] or 0) for y in yozuvlar) or 1
+    for y in yozuvlar:
+        ulush = int(round(yangi_jami_narx * (y["narx"] or 0) / eski_jami))
+        conn.execute("UPDATE joylashgan SET narx=? WHERE id=?", (ulush, y["id"]))
+    conn.commit()
+    conn.close()
