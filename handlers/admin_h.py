@@ -1674,6 +1674,12 @@ def register(bot):
         conn.execute("DELETE FROM adminlar WHERE user_id=?", (uid,))
         conn.commit()
         conn.close()
+        # /admin buyrug'ini olib tashlash (faqat /start qoladi)
+        try:
+            from telebot import types as _t
+            bot.set_my_commands([_t.BotCommand("start", "Bosh menyu")],
+                                scope=_t.BotCommandScopeChat(uid))
+        except: pass
         bot.edit_message_text(f"Admin {uid} ochirildi", call.message.chat.id, call.message.message_id)
         try: bot.send_message(uid, "Admin huquqingiz bekor qilindi.")
         except: pass
@@ -2574,6 +2580,14 @@ def admin_matn_handler(bot, msg, uid, text, astate):
                         (new_id, "Admin", datetime.now().strftime("%d.%m.%Y %H:%M")))
             conn.commit(); conn.close()
             astate.pop(uid, None)
+            # Yangi adminga /admin buyrug'ini ko'rsatish
+            try:
+                from telebot import types as _t
+                bot.set_my_commands([
+                    _t.BotCommand("start", "Bosh menyu"),
+                    _t.BotCommand("admin", "Admin panel"),
+                ], scope=_t.BotCommandScopeChat(new_id))
+            except: pass
             bot.send_message(cid, f"{new_id} admin qilindi!", reply_markup=admin_kb(uid))
             try: bot.send_message(new_id, "Siz admin qilindingiz! /admin bosing.")
             except: pass
