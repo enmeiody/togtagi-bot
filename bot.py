@@ -13,15 +13,38 @@ if not BOT_TOKEN:
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-from db import init_db
+from db import init_db, DIRECTOR_IDS
 init_db()
 logging.info("Database initialized")
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True, num_threads=4)
+
+# Default (hammaga): faqat /start
 bot.set_my_commands([
     telebot.types.BotCommand("start", "Bosh menyu"),
-    telebot.types.BotCommand("admin", "Admin panel"),
 ])
+# Adminlarga (director va adminlar): /start + /admin
+try:
+    from db import get_db
+    admin_ids = set(DIRECTOR_IDS)
+    try:
+        _conn = get_db()
+        for _r in _conn.execute("SELECT user_id FROM adminlar").fetchall():
+            if _r["user_id"]:
+                admin_ids.add(_r["user_id"])
+        _conn.close()
+    except Exception:
+        pass
+    for _aid in admin_ids:
+        try:
+            bot.set_my_commands([
+                telebot.types.BotCommand("start", "Bosh menyu"),
+                telebot.types.BotCommand("admin", "Admin panel"),
+            ], scope=telebot.types.BotCommandScopeChat(_aid))
+        except Exception:
+            pass
+except Exception as e:
+    logging.warning(f"Admin commands set failed: {e}")
 
 from handlers import admin_h, mijoz, extra_callbacks
 admin_h.register(bot)
