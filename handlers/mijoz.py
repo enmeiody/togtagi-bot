@@ -85,7 +85,7 @@ def register(bot):
         state[uid] = {"step": "kishi"}
         log_stat(uid, "bron")
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
-        for i in range(1, 11):
+        for i in range(1, 21):
             kb.add(str(i))
         kb.add(txt(uid, "bosh_menu"))
         bot.send_message(uid, txt(uid, "necha_kishi"), reply_markup=kb)
@@ -96,7 +96,7 @@ def register(bot):
         state[uid] = {"step": "bosh_kishi"}
         log_stat(uid, "bosh_xonalar")
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
-        for i in range(1, 11):
+        for i in range(1, 21):
             kb.add(str(i))
         kb.add(txt(uid, "bosh_menu"))
         bot.send_message(uid, txt(uid, "necha_kishi"), reply_markup=kb)
@@ -197,7 +197,7 @@ def register(bot):
         uid = call.from_user.id
         state[uid] = {"step": "kishi"}
         kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=5)
-        for i in range(1, 11):
+        for i in range(1, 21):
             kb.add(str(i))
         kb.add(txt(uid, "bosh_menu"))
         bot.send_message(uid, txt(uid, "necha_kishi"), reply_markup=kb)
